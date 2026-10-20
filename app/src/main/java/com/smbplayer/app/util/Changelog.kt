@@ -17,6 +17,14 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.22",
+            date = "2026-10-20",
+            lines = listOf(
+                "修复「带同名字幕的视频无法播放」：不再走 Media3 字幕轨，改为播前读入内存自解析成 cue 列表，由播放页底部叠加层按播放位置渲染；支持 SRT/VTT/ASS/SSA/TTML，自动识别 UTF-8/UTF-16/GBK；字幕失败只提示、按无字幕播放，视频不受影响",
+                "修复列表页长文件名滚动不明显/不动：提速到约 60dp/秒（超长文本兜底加速一趟不超过 6 秒），首尾停顿改为固定 500ms，避免重复 measure 反复重启动画",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.21",
             date = "2026-10-20",
             lines = listOf(

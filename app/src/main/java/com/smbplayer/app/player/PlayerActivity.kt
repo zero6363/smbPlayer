@@ -18,26 +18,18 @@ import android.view.MotionEvent
 import android.view.TextureView
 import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.SeekBar
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import androidx.media3.common.C
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackParameters
-import androidx.media3.common.Tracks
-import androidx.media3.common.TrackSelectionOverride
-import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.ByteArrayDataSource
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.MediaSource
-import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import androidx.media3.exoplayer.source.SingleSampleMediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -92,31 +84,14 @@ class PlayerActivity : AppCompatActivity() {
     /** 当前目录下的全部非目录文件名（用于在同级目录里找同名字幕） */
     private var allFileNames: Set<String> = emptySet()
 
-    /** 当前播放挂载的同名字幕（出错时用于回退为无字幕重播） */
-    private var currentSubtitleName: String? = null
+    /** 当前视频的同名字幕（播前解析成 cue 列表，由叠加层渲染） */
+    private var subtitleCues: List<SubtitleCue> = emptyList()
 
-    /** 当前视频是否已因字幕失败回退过一次（只回退一次，避免死循环） */
-    private var subtitleRetried = false
-
-    /** 下一次播放不要字幕（字幕失败回退时一次性置位） */
-    private var skipSubtitleOnce = false
-
-    /** 当前这档媒体自从设置后是否进入过 READY（用于字幕卡住兜底判断） */
-    private var playbackEverReady = false
-
-    /** 字幕挂载后播放卡住的兜底：10 秒还没起播就按无字幕重播一次 */
-    private val subtitleStallRunnable = Runnable {
-        val p = player ?: return@Runnable
-        val sub = currentSubtitleName
-        if (sub != null && !subtitleRetried && !playbackEverReady &&
-            p.playbackState == Player.STATE_BUFFERING
-        ) {
-            subtitleRetried = true
-            skipSubtitleOnce = true
-            val resumeAt = p.currentPosition
-            logError("字幕挂载后播放卡住，回退为无字幕播放: $sub")
-            toast(getString(R.string.subtitle_fallback_hint))
-            playAt(index, resumeAt)
+    /** 字幕叠加层刷新（100ms 一帧，cue 切换更及时） */
+    private val subtitleTickRunnable = object : Runnable {
+        override fun run() {
+            updateSubtitleOverlay()
+            mainHandler.postDelayed(this, SUBTITLE_TICK_MS)
         }
     }
 
@@ -174,11 +149,6 @@ class PlayerActivity : AppCompatActivity() {
                 if (playbackState == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
             if (playbackState == Player.STATE_ENDED) {
                 playNext(fromUser = false)
-            } else if (playbackState == Player.STATE_READY) {
-                playbackEverReady = true
-                mainHandler.removeCallbacks(subtitleStallRunnable)
-            } else if (playbackState != Player.STATE_BUFFERING) {
-                mainHandler.removeCallbacks(subtitleStallRunnable)
             }
             updateControls()
             if (playbackState == Player.STATE_READY) scheduleHideControls()
@@ -191,35 +161,7 @@ class PlayerActivity : AppCompatActivity() {
 
         override fun onPlayerError(error: PlaybackException) {
             binding.progress.visibility = View.GONE
-            // 挂了同名字幕的：先按「无字幕」重播一次（保留当前进度）。
-            // 字幕的问题（读取/解析/合并）不该让视频本身也看不了。
-            val p = player
-            if (p != null && currentSubtitleName != null && !subtitleRetried) {
-                subtitleRetried = true
-                skipSubtitleOnce = true
-                val resumeAt = p.currentPosition
-                logError("字幕导致播放失败，回退为无字幕播放: $currentSubtitleName", error)
-                toast(getString(R.string.subtitle_fallback_hint))
-                playAt(index, resumeAt)
-                return
-            }
             showPlaybackError(error)
-        }
-
-        override fun onTracksChanged(tracksInfo: Tracks) {
-            // 外部同名字幕默认打了 SELECTION_FLAG_DEFAULT，但部分设备/格式下默认选择器
-            // 不会自动把它选上；这里兜底：存在文本轨就强制选中，确保字幕显示。
-            val p = player ?: return
-            val textGroup = tracksInfo.groups.firstOrNull {
-                it.type == C.TRACK_TYPE_TEXT && it.isSupported && it.length > 0
-            } ?: return
-            val group = textGroup.mediaTrackGroup
-            val desired = TrackSelectionOverride(group, listOf(0))
-            if (p.trackSelectionParameters.overrides[group] != desired) {
-                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                    .setOverrideForType(desired)
-                    .build()
-            }
         }
     }
 
@@ -336,6 +278,11 @@ class PlayerActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         mainHandler.postDelayed(tickRunnable, TICK_INTERVAL_MS)
+        // 有字幕就恢复叠加层刷新（后台播放时也保持，暂停状态下 cue 不变，开销可忽略）
+        if (subtitleCues.isNotEmpty()) {
+            mainHandler.removeCallbacks(subtitleTickRunnable)
+            mainHandler.post(subtitleTickRunnable)
+        }
     }
 
     override fun onStop() {
@@ -346,7 +293,7 @@ class PlayerActivity : AppCompatActivity() {
         }
         mainHandler.removeCallbacks(tickRunnable)
         mainHandler.removeCallbacks(hideControlsRunnable)
-        mainHandler.removeCallbacks(subtitleStallRunnable)
+        mainHandler.removeCallbacks(subtitleTickRunnable)
     }
 
     override fun onDestroy() {
@@ -470,9 +417,8 @@ class PlayerActivity : AppCompatActivity() {
         val uri = displayUri(name)
         logInfo("开始播放: $name 位置=${startPositionMs}ms")
 
-        // 换视频：作废上一条卡住兜底，重置「是否起播过」标记
-        mainHandler.removeCallbacks(subtitleStallRunnable)
-        playbackEverReady = false
+        // 换视频：作换上一条字幕的刷新
+        mainHandler.removeCallbacks(subtitleTickRunnable)
 
         // 先同步更新标题/进度等 UI；字幕的 SMB 读取放 IO 线程，避免卡主线程
         binding.tvTitle.text = name
@@ -489,55 +435,37 @@ class PlayerActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                // 自动加载视频同名字幕：在同级目录找同名（或带语言标签）的 .srt/.ass 等文件。
-                // 字幕先整体读进内存再挂轨——读取失败/文件为空/过大都按「无字幕」播放，
-                // 绝不让字幕问题拖垮视频播放。
-                val subtitleName = if (skipSubtitleOnce) {
-                    // 上一次就是字幕把播放搞挂了：这次明确不要字幕
-                    skipSubtitleOnce = false
-                    logInfo("字幕加载失败过，本次按无字幕播放: $name")
-                    null
-                } else {
-                    SubtitleFormats.findSubtitle(name, allFileNames)
-                }
-                val subtitleBytes = if (subtitleName != null) {
+                // 自动加载视频同名字幕：在同级目录找同名（或带语言标签）的 .srt/.ass 等文件，
+                // 播前在 IO 线程整体读入内存并解析成 cue 列表，由播放页叠加层渲染。
+                // 字幕只做「锦上花」：读取/解析失败都按无字幕播放，绝不影响视频本身。
+                var subtitleError: String? = null
+                val subtitleName = SubtitleFormats.findSubtitle(name, allFileNames)
+                val cues = if (subtitleName != null) {
                     withContext(Dispatchers.IO) {
-                        runCatching { readSubtitleBytes(subtitleName) }
-                            .onFailure { logError("字幕读取失败，按无字幕播放: $subtitleName", it) }
-                            .getOrNull()
-                            ?.takeIf { it.isNotEmpty() }
+                        try {
+                            val bytes = readSubtitleBytes(subtitleName)
+                            SubtitleTextParser.parse(subtitleName, bytes)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            logError("字幕加载失败，按无字幕播放: $subtitleName", e)
+                            subtitleError = subtitleName
+                            emptyList()
+                        }
                     }
                 } else {
-                    null
+                    emptyList()
                 }
 
                 val factory = SmbDataSource.Factory(session, shareName, pathOf(name), uri)
                 val videoSource = ProgressiveMediaSource.Factory(factory, DefaultExtractorsFactory())
                     .createMediaSource(MediaItem.fromUri(uri))
 
-                val source: MediaSource =
-                    if (subtitleName != null && subtitleBytes != null) {
-                        val subUri = displayUri(subtitleName)
-                        val subConfig = MediaItem.SubtitleConfiguration.Builder(subUri)
-                            .setMimeType(SubtitleFormats.mimeOf(subtitleName) ?: MimeTypes.APPLICATION_SUBRIP)
-                            .setLanguage("und")
-                            .setLabel(subtitleName)
-                            .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-                            .build()
-                        // 字幕数据已在内存里，用 ByteArrayDataSource 挂成单独的字幕轨，
-                        // 再和视频轨合并——播放过程中不再走 SMB，杜绝字幕流把播放搞挂。
-                        val subSource = SingleSampleMediaSource.Factory { ByteArrayDataSource(subtitleBytes) }
-                            .createMediaSource(subConfig, C.TIME_UNSET)
-                        MergingMediaSource(videoSource, subSource)
-                    } else {
-                        videoSource
-                    }
-
                 // 期间用户可能又切了别的视频：被取代的这次不再动手
                 if (index != newIndex) return@launch
 
                 val p = player ?: return@launch
-                p.setMediaSource(source, startPositionMs)
+                p.setMediaSource(videoSource, startPositionMs)
                 p.prepare()
                 p.playWhenReady = true
 
@@ -546,19 +474,20 @@ class PlayerActivity : AppCompatActivity() {
                 p.playbackParameters = PlaybackParameters(normalSpeed)
                 updateSpeedButton()
 
-                val loadedSubtitle =
-                    if (subtitleName != null && subtitleBytes != null) subtitleName else null
-                currentSubtitleName = loadedSubtitle
-                subtitleRetried = false
+                // 字幕：解析成功就挂上叠加层；失败只提示，视频照常播
+                subtitleCues = cues
+                val loadedSubtitle = if (subtitleName != null && cues.isNotEmpty()) subtitleName else null
+                mainHandler.removeCallbacks(subtitleTickRunnable)
                 if (loadedSubtitle != null) {
-                    logInfo("已加载同名字幕: $loadedSubtitle")
+                    logInfo("已加载同名字幕: $loadedSubtitle（${cues.size} 条）")
                     showCenterHint(getString(R.string.subtitle_loaded, loadedSubtitle))
-                    // 兜底：个别设备/格式下合并字幕轨会让播放一直卡在缓冲起不来，
-                    // 10 秒还没起播就按无字幕重播一次，保证视频能看。
-                    mainHandler.postDelayed(
-                        subtitleStallRunnable,
-                        SUBTITLE_STALL_TIMEOUT_MS,
-                    )
+                    updateSubtitleOverlay()
+                    mainHandler.post(subtitleTickRunnable)
+                } else {
+                    binding.tvSubtitleOverlay.visibility = View.GONE
+                }
+                if (subtitleError != null) {
+                    toast(getString(R.string.subtitle_load_failed, subtitleError))
                 }
             } catch (e: CancellationException) {
                 throw e // 用户离开播放页：正常取消
@@ -569,6 +498,23 @@ class PlayerActivity : AppCompatActivity() {
                     toast(getString(R.string.player_error, e.message ?: e.toString()))
                 }
             }
+        }
+    }
+
+    /** 刷新字幕叠加层：按当前播放位置找 active cue */
+    private fun updateSubtitleOverlay() {
+        val overlay = binding.tvSubtitleOverlay
+        if (subtitleCues.isEmpty()) {
+            overlay.visibility = View.GONE
+            return
+        }
+        val pos = player?.currentPosition ?: return
+        val cue = subtitleCues.firstOrNull { pos >= it.startMs && pos < it.endMs }
+        if (cue != null) {
+            if (overlay.text?.toString() != cue.text) overlay.text = cue.text
+            overlay.visibility = View.VISIBLE
+        } else {
+            overlay.visibility = View.GONE
         }
     }
 
@@ -954,13 +900,25 @@ class PlayerActivity : AppCompatActivity() {
     private fun showControls() {
         binding.topBar.visibility = View.VISIBLE
         binding.bottomBar.visibility = View.VISIBLE
+        setSubtitleBottomMargin(148)
         scheduleHideControls()
     }
 
     private fun hideControls() {
         binding.topBar.visibility = View.GONE
         binding.bottomBar.visibility = View.GONE
+        setSubtitleBottomMargin(40)
         mainHandler.removeCallbacks(hideControlsRunnable)
+    }
+
+    /** 字幕叠加层距底部的距离：控制条显示时避让，隐藏时贴近底部 */
+    private fun setSubtitleBottomMargin(dp: Int) {
+        val params = binding.tvSubtitleOverlay.layoutParams as? FrameLayout.LayoutParams ?: return
+        val px = (dp * resources.displayMetrics.density).toInt()
+        if (params.bottomMargin != px) {
+            params.bottomMargin = px
+            binding.tvSubtitleOverlay.layoutParams = params
+        }
     }
 
     private fun scheduleHideControls() {
@@ -988,8 +946,8 @@ class PlayerActivity : AppCompatActivity() {
         /** 同名字幕整体读进内存的大小上限（超过就按无字幕播放，避免异常大文件） */
         private const val MAX_SUBTITLE_BYTES = 8L * 1024 * 1024
 
-        /** 字幕挂载后多久还没起播就按无字幕重播（兜底） */
-        private const val SUBTITLE_STALL_TIMEOUT_MS = 10_000L
+        /** 字幕叠加层刷新间隔 */
+        private const val SUBTITLE_TICK_MS = 100L
 
         fun intent(
             context: Context,

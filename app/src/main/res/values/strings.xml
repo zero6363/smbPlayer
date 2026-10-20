@@ -85,7 +85,7 @@
     <string name="player_deleted_last">视频已删除，没有更多视频了</string>
     <string name="player_delete_failed">删除失败：%1$s</string>
     <string name="subtitle_loaded">已加载字幕：%1$s</string>
-    <string name="subtitle_fallback_hint">字幕无法使用，已切换为无字幕播放</string>
+    <string name="subtitle_load_failed">字幕加载失败，按无字幕播放：%1$s</string>
     <string name="player_loading">正在加载视频…</string>
     <string name="player_playlist_title">播放列表</string>
 
