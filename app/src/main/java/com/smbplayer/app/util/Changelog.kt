@@ -17,6 +17,13 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.24",
+            date = "2026-10-21",
+            lines = listOf(
+                "目录列表新增排序：菜单「排序」可选文件名 / 大小 / 创建时间，各支持升序 / 降序，选中即生效并记入设置；默认仍是文件名升序，目录始终排在文件前面",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.23",
             date = "2026-10-20",
             lines = listOf(

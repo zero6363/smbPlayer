@@ -119,6 +119,16 @@
     <string name="action_add_favorite">收藏当前路径</string>
     <string name="action_close">关闭，返回首页</string>
     <string name="action_switch_share">切换共享 / 其他磁盘</string>
+
+    <!-- 排序 -->
+    <string name="action_sort">排序</string>
+    <string name="sort_title">排序方式</string>
+    <string name="sort_name_asc">文件名（升序）</string>
+    <string name="sort_name_desc">文件名（降序）</string>
+    <string name="sort_size_asc">大小（升序，小的在前）</string>
+    <string name="sort_size_desc">大小（降序，大的在前）</string>
+    <string name="sort_created_asc">创建时间（升序，早的在前）</string>
+    <string name="sort_created_desc">创建时间（降序，新的在前）</string>
     <string name="favorite_added">已收藏：%1$s</string>
     <string name="favorite_already_exists">该路径已收藏</string>
 

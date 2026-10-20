@@ -15,7 +15,9 @@ import com.smbplayer.app.R
 import com.smbplayer.app.data.FavoritePath
 import com.smbplayer.app.data.FavoriteRepository
 import com.smbplayer.app.data.ServerRepository
+import com.smbplayer.app.data.SettingsRepository
 import com.smbplayer.app.data.SmbServer
+import com.smbplayer.app.data.SortOptions
 import com.smbplayer.app.data.VideoFormats
 import com.smbplayer.app.databinding.ActivityBrowseBinding
 import com.smbplayer.app.databinding.DialogSharePickerBinding
@@ -140,6 +142,10 @@ class BrowseActivity : AppCompatActivity() {
                 }
                 R.id.action_switch_share -> {
                     switchShare()
+                    true
+                }
+                R.id.action_sort -> {
+                    showSortDialog()
                     true
                 }
                 else -> false
@@ -268,6 +274,46 @@ class BrowseActivity : AppCompatActivity() {
         toast(R.string.not_supported)
     }
 
+    /**
+     * 排序方式选择：文件名 / 大小 / 创建时间 × 升序 / 降序，选中即生效（无需再点确认）。
+     * 目录始终排在文件前面。选择写回设置，下次进入沿用。
+     */
+    private fun showSortDialog() {
+        val labels = arrayOf(
+            getString(R.string.sort_name_asc),
+            getString(R.string.sort_name_desc),
+            getString(R.string.sort_size_asc),
+            getString(R.string.sort_size_desc),
+            getString(R.string.sort_created_asc),
+            getString(R.string.sort_created_desc),
+        )
+        val checked = SortOptions.indexOf(SettingsRepository.sortField, SettingsRepository.sortAscending)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.sort_title)
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                val (field, ascending) = SortOptions.LABELS[which]
+                SettingsRepository.sortField = field
+                SettingsRepository.sortAscending = ascending
+                applySort()
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.server_cancel, null)
+            .show()
+    }
+
+    /** 按当前设置重排已加载的列表（不发网络请求） */
+    private fun applySort() {
+        if (entries.isEmpty()) return
+        entries = SortOptions.sorted(
+            entries,
+            SettingsRepository.sortField,
+            SettingsRepository.sortAscending,
+        )
+        adapter.submit(entries)
+        updateHeader(entries)
+        binding.recycler.scrollToPosition(0)
+    }
+
     private fun videoNames(): List<String> =
         entries.asSequence()
             .filter { !it.isDirectory && VideoFormats.isVideo(it.name) }
@@ -350,8 +396,13 @@ class BrowseActivity : AppCompatActivity() {
             try {
                 logInfo("加载目录: 共享=$shareName 路径=$currentPath")
                 val list = withContext(Dispatchers.IO) { session.list(shareName, currentPath) }
-                entries = list
-                adapter.submit(list)
+                // 按用户选的排序方式排（默认文件名升序，目录在前）
+                entries = SortOptions.sorted(
+                    list,
+                    SettingsRepository.sortField,
+                    SettingsRepository.sortAscending,
+                )
+                adapter.submit(entries)
                 showLoading(false)
                 logInfo("目录加载完成: ${list.size} 项")
                 updateHeader(list)

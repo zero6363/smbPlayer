@@ -33,6 +33,11 @@
         app:showAsAction="always" />
 
     <item
+        android:id="@+id/action_sort"
+        android:title="@string/action_sort"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_switch_share"
         android:title="@string/action_switch_share"
         app:showAsAction="never" />

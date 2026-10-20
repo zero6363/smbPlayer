@@ -33,12 +33,18 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
-/** 目录列表中的一项。 */
+/**
+ * 目录列表中的一项。
+ *
+ * [createdAt] 是服务端返回的创建时间；部分设备/共享不提供或返回 0，
+ * 排序时由 [SortOptions] 回退到 [lastModified]。
+ */
 data class SmbEntry(
     val name: String,
     val isDirectory: Boolean,
     val size: Long,
     val lastModified: Long,
+    val createdAt: Long = 0L,
 )
 
 /**
@@ -503,6 +509,11 @@ class SmbSession(private val server: SmbServer) : Closeable {
         size = endOfFile,
         lastModified = try {
             lastWriteTime.toEpochMillis()
+        } catch (t: Throwable) {
+            0L
+        },
+        createdAt = try {
+            creationTime.toEpochMillis()
         } catch (t: Throwable) {
             0L
         },

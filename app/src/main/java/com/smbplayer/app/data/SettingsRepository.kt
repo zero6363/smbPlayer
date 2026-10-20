@@ -15,6 +15,8 @@ object SettingsRepository {
     private const val KEY_SWIPE_SENSITIVITY = "swipe_sensitivity"
     private const val KEY_BACKGROUND_PLAY = "background_play"
     private const val KEY_NORMAL_SPEED = "normal_speed"
+    private const val KEY_SORT_FIELD = "sort_field"
+    private const val KEY_SORT_ASCENDING = "sort_ascending"
 
     private val lock = Any()
 
@@ -65,5 +67,22 @@ object SettingsRepository {
         get() = store().getFloat(KEY_NORMAL_SPEED, 1.0f)
         set(value) {
             store().edit().putFloat(KEY_NORMAL_SPEED, value).apply()
+        }
+
+    /**
+     * 目录列表排序字段：见 [SortOptions.FIELD_NAME] / [FIELD_SIZE] / [FIELD_CREATED]。
+     * 默认按文件名。
+     */
+    var sortField: Int
+        get() = store().getInt(KEY_SORT_FIELD, SortOptions.DEFAULT_FIELD)
+        set(value) {
+            store().edit().putInt(KEY_SORT_FIELD, value).apply()
+        }
+
+    /** 目录列表排序方向：true 升序，false 降序。默认升序。 */
+    var sortAscending: Boolean
+        get() = store().getBoolean(KEY_SORT_ASCENDING, SortOptions.DEFAULT_ASCENDING)
+        set(value) {
+            store().edit().putBoolean(KEY_SORT_ASCENDING, value).apply()
         }
 }
