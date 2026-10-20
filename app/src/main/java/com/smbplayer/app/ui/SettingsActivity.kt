@@ -8,6 +8,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.smbplayer.app.R
 import com.smbplayer.app.data.SettingsRepository
+import com.smbplayer.app.data.SpeedOptions
 import com.smbplayer.app.databinding.ActivitySettingsBinding
 import com.smbplayer.app.util.Changelog
 import com.smbplayer.app.util.toast
@@ -52,19 +53,24 @@ class SettingsActivity : AppCompatActivity() {
             getString(R.string.settings_speed_value, SettingsRepository.playbackSpeed)
     }
 
-    /** 长按屏幕时的临时倍速（区别于播放页常驻倍速） */
+    /**
+     * 长按屏幕时的临时倍速（区别于播放页常驻倍速）。
+     * 选项与播放页倍速共用 [SpeedOptions]，选中即设置成功。
+     */
     private fun showLongPressSpeedDialog() {
-        val speeds = floatArrayOf(1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f, 4.0f)
-        val labels = speeds.map { getString(R.string.settings_speed_value, it) }.toTypedArray()
-        val current = SettingsRepository.playbackSpeed
-        var checked = speeds.indexOfFirst { it == current }.coerceAtLeast(0)
+        val labels = SpeedOptions.VALUES
+            .map { getString(R.string.settings_speed_value, it) }
+            .toTypedArray()
+        val checked = SpeedOptions.indexOf(SettingsRepository.playbackSpeed)
+            .coerceAtLeast(SpeedOptions.DEFAULT_INDEX)
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.settings_speed_label)
-            .setSingleChoiceItems(labels, checked) { _, which -> checked = which }
-            .setPositiveButton(R.string.speed_set) { _, _ ->
-                SettingsRepository.playbackSpeed = speeds[checked]
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                val speed = SpeedOptions.VALUES[which]
+                SettingsRepository.playbackSpeed = speed
                 updateLongPressSpeedLabel()
-                toast(getString(R.string.settings_speed_value, speeds[checked]))
+                toast(getString(R.string.settings_speed_value, speed))
+                dialog.dismiss()
             }
             .setNegativeButton(R.string.server_cancel, null)
             .show()

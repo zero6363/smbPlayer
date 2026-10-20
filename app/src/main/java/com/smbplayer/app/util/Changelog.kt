@@ -17,6 +17,13 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.25",
+            date = "2026-10-21",
+            lines = listOf(
+                "设置页「长按倍速」选项与播放页倍速统一为同一套档位（0.3 / 0.5 / 0.7 / 1 / 2 / 3 / 4 / 5 / 6x），两处共用 SpeedOptions；设置页也改为选中即生效，无需再点确认",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.24",
             date = "2026-10-21",
             lines = listOf(

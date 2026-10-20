@@ -37,6 +37,7 @@ import com.smbplayer.app.R
 import com.smbplayer.app.data.ServerRepository
 import com.smbplayer.app.data.SettingsRepository
 import com.smbplayer.app.data.SmbServer
+import com.smbplayer.app.data.SpeedOptions
 import com.smbplayer.app.data.SubtitleFormats
 import com.smbplayer.app.data.VideoFormats
 import com.smbplayer.app.databinding.ActivityPlayerBinding
@@ -652,14 +653,16 @@ class PlayerActivity : AppCompatActivity() {
 
     /** 播放页常驻倍速选择：与长按临时倍速分开，选中即设置成功并立即应用到当前视频 */
     private fun showNormalSpeedDialog() {
-        val speeds = floatArrayOf(0.3f, 0.5f, 0.7f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f)
-        val labels = speeds.map { getString(R.string.settings_speed_value, it) }.toTypedArray()
-        val current = SettingsRepository.normalSpeed
-        var checked = speeds.indexOfFirst { it == current }.coerceAtLeast(3)
+        // 选项与设置页长按倍速共用同一份（SpeedOptions），保证两处一致
+        val labels = SpeedOptions.VALUES
+            .map { getString(R.string.settings_speed_value, it) }
+            .toTypedArray()
+        val checked = SpeedOptions.indexOf(SettingsRepository.normalSpeed)
+            .coerceAtLeast(SpeedOptions.DEFAULT_INDEX)
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.player_speed_title)
             .setSingleChoiceItems(labels, checked) { dlg, which ->
-                val sp = speeds[which]
+                val sp = SpeedOptions.VALUES[which]
                 SettingsRepository.normalSpeed = sp
                 normalSpeed = sp
                 player?.playbackParameters = PlaybackParameters(sp)

@@ -23,8 +23,8 @@ android {
         applicationId = "com.smbplayer.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 34
-        versionName = "1.24"
+        versionCode = 35
+        versionName = "1.25"
     }
 
     signingConfigs {
