@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#FF4F7CF5</color>
+    <color name="primary_dark">#FF2E4FBF</color>
+    <color name="on_primary">#FFFFFFFF</color>
+    <color name="secondary">#FF26A69A</color>
+    <color name="background">#FFF7F8FC</color>
+    <color name="surface">#FFFFFFFF</color>
+    <color name="on_surface">#FF1B1C1F</color>
+    <color name="on_surface_variant">#FF5A5D66</color>
+    <color name="outline">#FFE1E3EA</color>
+
+    <color name="player_background">#FF000000</color>
+    <color name="player_control_text">#FFFFFFFF</color>
+    <color name="player_scrim">#99000000</color>
+    <color name="player_accent">#FF4F7CF5</color>
+    <color name="player_seek_buffered">#33FFFFFF</color>
+    <color name="player_seek_played">#FF4F7CF5</color>
+    <color name="player_seek_thumb">#FFFFFFFF</color>
+
+    <color name="folder_tint">#FFF5A623</color>
+    <color name="video_tint">#FF4F7CF5</color>
+
+    <color name="player_speed_tint">#FFFF9800</color>
+    <color name="player_seek_hint">#80FFFFFF</color>
+    <color name="player_control_text_dim">#CCFFFFFF</color>
+
+    <color name="ic_launcher_background">#FF101A33</color>
+</resources>

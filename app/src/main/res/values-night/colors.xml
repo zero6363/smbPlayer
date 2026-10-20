@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 夜间模式配色：只覆盖需要变的，播放器配色两种模式一致 -->
+<resources>
+    <color name="primary">#FF4F7CF5</color>
+    <color name="primary_dark">#FF1A2A5E</color>
+    <color name="on_primary">#FFFFFFFF</color>
+    <color name="secondary">#FF26A69A</color>
+
+    <color name="background">#FF101114</color>
+    <color name="surface">#FF1A1B1F</color>
+    <color name="on_surface">#FFE8EAED</color>
+    <color name="on_surface_variant">#FFA6AAB3</color>
+    <color name="outline">#FF33363D</color>
+
+    <color name="folder_tint">#FFF5A623</color>
+    <color name="video_tint">#FF6B93FF</color>
+</resources>
