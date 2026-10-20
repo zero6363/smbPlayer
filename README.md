@@ -51,7 +51,7 @@ app/src/main/java/com/smbplayer/app/
 
 ## 构建
 
-工具链安装在 `D:\code\sdk`（JDK 17、Gradle 8.9、Android SDK）。一键构建：
+一键构建：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build.ps1            # assembleDebug
