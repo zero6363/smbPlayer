@@ -24,10 +24,14 @@
         android:layout_marginEnd="8dp"
         android:orientation="vertical">
 
-        <com.smbplayer.app.widget.MarqueeTextView
+        <!-- 长文件名折行显示（最多 3 行）：不依赖跑马灯动画，保证完整可读；
+             超长到 3 行仍放不下的，用中间省略保留开头和结尾（最关键的识别部分） -->
+        <TextView
             android:id="@+id/tv_name"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:ellipsize="middle"
+            android:maxLines="3"
             android:textColor="@color/on_surface"
             android:textSize="15sp"
             android:textStyle="bold" />

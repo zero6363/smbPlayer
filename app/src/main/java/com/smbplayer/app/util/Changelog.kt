@@ -17,6 +17,13 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.23",
+            date = "2026-10-20",
+            lines = listOf(
+                "列表长文件名改为折行显示：不再依赖跑马灯动画（列表里部分条目仍不动），文件列表与播放列表最多 3 行、收藏与服务器列表最多 2 行，短文件名仍是一行、行高不变；超长到上限仍放不下的用中间省略保留开头和结尾",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.22",
             date = "2026-10-20",
             lines = listOf(

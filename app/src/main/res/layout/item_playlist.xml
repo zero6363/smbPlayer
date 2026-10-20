@@ -26,12 +26,14 @@
         android:src="@drawable/ic_movie"
         app:tint="@color/video_tint" />
 
-    <com.smbplayer.app.widget.MarqueeTextView
+    <TextView
         android:id="@+id/tv_name"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="12dp"
         android:layout_weight="1"
+        android:ellipsize="middle"
+        android:maxLines="3"
         android:textColor="@color/on_surface"
         android:textSize="14sp" />
 
