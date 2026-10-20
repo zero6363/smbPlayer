@@ -88,10 +88,11 @@
 
     <!-- 操作提示（保存结果等） -->
     <TextView
-        android:id="@+id/tv_center_hint"
+        android:id="@+id/tv_hint"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="center"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="72dp"
         android:background="@drawable/bg_hint_pill"
         android:paddingStart="18dp"
         android:paddingEnd="18dp"

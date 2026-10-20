@@ -121,14 +121,14 @@ class PlayerActivity : AppCompatActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     /** 居中提示自动隐藏 */
-    private val hideCenterHintRunnable = Runnable { binding.tvCenterHint.visibility = View.GONE }
+    private val hideHintRunnable = Runnable { binding.tvHint.visibility = View.GONE }
 
-    /** 居中显示一条操作提示，稍后自动隐藏 */
-    private fun showCenterHint(text: String) {
-        binding.tvCenterHint.text = text
-        binding.tvCenterHint.visibility = View.VISIBLE
-        mainHandler.removeCallbacks(hideCenterHintRunnable)
-        mainHandler.postDelayed(hideCenterHintRunnable, HINT_HIDE_DELAY_MS)
+    /** 底部显示一条操作提示（不挡画面），稍后自动隐藏 */
+    private fun showHint(text: String) {
+        binding.tvHint.text = text
+        binding.tvHint.visibility = View.VISIBLE
+        mainHandler.removeCallbacks(hideHintRunnable)
+        mainHandler.postDelayed(hideHintRunnable, HINT_HIDE_DELAY_MS)
     }
 
     private val tickRunnable = object : Runnable {
@@ -207,7 +207,7 @@ class PlayerActivity : AppCompatActivity() {
             // 滑动过程中实时提示滑到了几分几秒、相对按下点偏移多少
             val sign = if (clamped >= swipeStartPosition) "+" else "-"
             val diffSec = (abs(clamped - swipeStartPosition) / 1000)
-            showCenterHint(
+            showHint(
                 getString(
                     R.string.hint_swipe_seek,
                     formatDuration(clamped),
@@ -481,7 +481,7 @@ class PlayerActivity : AppCompatActivity() {
                 mainHandler.removeCallbacks(subtitleTickRunnable)
                 if (loadedSubtitle != null) {
                     logInfo("已加载同名字幕: $loadedSubtitle（${cues.size} 条）")
-                    showCenterHint(getString(R.string.subtitle_loaded, loadedSubtitle))
+                    showHint(getString(R.string.subtitle_loaded, loadedSubtitle))
                     updateSubtitleOverlay()
                     mainHandler.post(subtitleTickRunnable)
                 } else {
@@ -689,7 +689,7 @@ class PlayerActivity : AppCompatActivity() {
         p.seekTo(if (duration > 0) target.coerceAtMost(duration) else target)
         updateProgress()
         showControls()
-        showCenterHint(getString(R.string.hint_frame, formatDuration(p.currentPosition)))
+        showHint(getString(R.string.hint_frame, formatDuration(p.currentPosition)))
         logInfo("帧步进 ${if (direction < 0) "-" else "+"}1 帧 (${fps}fps): ${formatDuration(p.currentPosition)}")
     }
 
@@ -715,7 +715,7 @@ class PlayerActivity : AppCompatActivity() {
         val texture = binding.playerView.videoSurfaceView as? TextureView
         val frame = texture?.bitmap
         if (frame == null) {
-            showCenterHint(getString(R.string.keyframe_not_ready))
+            showHint(getString(R.string.keyframe_not_ready))
             return
         }
         // 保存期间置灰，防止连点重复导出同一帧
@@ -756,13 +756,13 @@ class PlayerActivity : AppCompatActivity() {
                     }
                 }
                 val msg = getString(R.string.keyframe_saved_name, filename)
-                showCenterHint(msg)
+                showHint(msg)
                 toast(msg)
                 logInfo("已导出帧到相册 Pictures/SMBPlayer: $filename (${bitmap.width}x${bitmap.height} PNG)")
             } catch (e: Exception) {
                 logError("导出帧失败: $filename", e)
                 val msg = getString(R.string.keyframe_save_failed, e.message ?: "未知错误")
-                showCenterHint(msg)
+                showHint(msg)
                 toast(msg)
             } finally {
                 binding.groupFrameSave.isEnabled = true
@@ -780,7 +780,7 @@ class PlayerActivity : AppCompatActivity() {
         } else {
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
-        showCenterHint(
+        showHint(
             getString(if (toLandscape) R.string.hint_orientation_landscape else R.string.hint_orientation_portrait)
         )
     }
@@ -789,11 +789,11 @@ class PlayerActivity : AppCompatActivity() {
         val p = player ?: return
         if (p.isPlaying) {
             p.pause()
-            showCenterHint(getString(R.string.hint_pause))
+            showHint(getString(R.string.hint_pause))
             showControls()
         } else {
             p.play()
-            showCenterHint(getString(R.string.hint_play))
+            showHint(getString(R.string.hint_play))
             scheduleHideControls()
         }
     }
@@ -805,7 +805,7 @@ class PlayerActivity : AppCompatActivity() {
         p.seekTo(if (duration > 0) target.coerceAtMost(duration) else target)
         updateProgress()
         showControls()
-        showCenterHint(getString(R.string.hint_seek, formatDuration(p.currentPosition)))
+        showHint(getString(R.string.hint_seek, formatDuration(p.currentPosition)))
     }
 
     private fun playNext(fromUser: Boolean): Boolean {
@@ -903,24 +903,26 @@ class PlayerActivity : AppCompatActivity() {
     private fun showControls() {
         binding.topBar.visibility = View.VISIBLE
         binding.bottomBar.visibility = View.VISIBLE
-        setSubtitleBottomMargin(148)
+        setBottomMargin(binding.tvSubtitleOverlay, 148)
+        setBottomMargin(binding.tvHint, 168)
         scheduleHideControls()
     }
 
     private fun hideControls() {
         binding.topBar.visibility = View.GONE
         binding.bottomBar.visibility = View.GONE
-        setSubtitleBottomMargin(40)
+        setBottomMargin(binding.tvSubtitleOverlay, 40)
+        setBottomMargin(binding.tvHint, 72)
         mainHandler.removeCallbacks(hideControlsRunnable)
     }
 
-    /** 字幕叠加层距底部的距离：控制条显示时避让，隐藏时贴近底部 */
-    private fun setSubtitleBottomMargin(dp: Int) {
-        val params = binding.tvSubtitleOverlay.layoutParams as? FrameLayout.LayoutParams ?: return
+    /** 调整叠加层距底部的距离：控制条显示时避让，隐藏时贴近底部 */
+    private fun setBottomMargin(view: View, dp: Int) {
+        val params = view.layoutParams as? FrameLayout.LayoutParams ?: return
         val px = (dp * resources.displayMetrics.density).toInt()
         if (params.bottomMargin != px) {
             params.bottomMargin = px
-            binding.tvSubtitleOverlay.layoutParams = params
+            view.layoutParams = params
         }
     }
 

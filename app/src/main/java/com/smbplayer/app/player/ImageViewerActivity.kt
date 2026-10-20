@@ -71,7 +71,7 @@ class ImageViewerActivity : AppCompatActivity() {
     private var saving = false
     private var deleting = false
 
-    private val hideHintRunnable = Runnable { binding.tvCenterHint.visibility = View.GONE }
+    private val hideHintRunnable = Runnable { binding.tvHint.visibility = View.GONE }
     private val hideControlsRunnable = Runnable { binding.topBar.visibility = View.GONE }
 
     private val pageCallback = object : ViewPager2.OnPageChangeCallback() {
@@ -81,9 +81,9 @@ class ImageViewerActivity : AppCompatActivity() {
         }
     }
 
-    private fun showCenterHint(text: String) {
-        binding.tvCenterHint.text = text
-        binding.tvCenterHint.visibility = View.VISIBLE
+    private fun showHint(text: String) {
+        binding.tvHint.text = text
+        binding.tvHint.visibility = View.VISIBLE
         mainHandler.removeCallbacks(hideHintRunnable)
         mainHandler.postDelayed(hideHintRunnable, HINT_HIDE_DELAY_MS)
     }
@@ -161,7 +161,7 @@ class ImageViewerActivity : AppCompatActivity() {
                 adapter.submit(names)
                 binding.pager.setCurrentItem(index, false)
                 updateHeader()
-                showCenterHint(getString(R.string.image_zoom_hint))
+                showHint(getString(R.string.image_zoom_hint))
                 logInfo("图片列表加载完成: ${list.size} 张")
             } catch (e: Exception) {
                 binding.progress.visibility = View.GONE
@@ -262,7 +262,7 @@ class ImageViewerActivity : AppCompatActivity() {
                     val filename = writeToGallery(bytes, name)
                     getString(R.string.image_saved, filename)
                 }
-                showCenterHint(msg)
+                showHint(msg)
                 toast(msg)
                 logInfo("已保存图片到相册 Pictures/SMBPlayer: $name")
             } catch (e: CancellationException) {
@@ -270,7 +270,7 @@ class ImageViewerActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 logError("保存图片失败: $name", e)
                 val msg = getString(R.string.image_save_failed, e.message ?: "未知错误")
-                showCenterHint(msg)
+                showHint(msg)
                 toast(msg)
             } finally {
                 saving = false
@@ -320,7 +320,7 @@ class ImageViewerActivity : AppCompatActivity() {
                 val next = index.coerceIn(0, names.lastIndex)
                 binding.pager.setCurrentItem(next, false)
                 updateHeader()
-                showCenterHint(msg)
+                showHint(msg)
                 toast(msg)
                 logInfo("图片已删除，剩余 ${names.size} 张")
             } catch (e: CancellationException) {
@@ -328,7 +328,7 @@ class ImageViewerActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 logError("删除图片失败: $name", e)
                 val msg = getString(R.string.player_delete_failed, e.message ?: "未知错误")
-                showCenterHint(msg)
+                showHint(msg)
                 toast(msg)
             } finally {
                 deleting = false

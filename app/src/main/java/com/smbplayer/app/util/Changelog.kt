@@ -17,6 +17,13 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.26",
+            date = "2026-10-21",
+            lines = listOf(
+                "操作提示（暂停 / 播放 / 快进快退 / 倍速 / 帧操作等）从画面正中改到底部居中，不再挡画面；控制条隐藏时提示自动下移，图片查看页的提示同样改为底部",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.25",
             date = "2026-10-21",
             lines = listOf(
