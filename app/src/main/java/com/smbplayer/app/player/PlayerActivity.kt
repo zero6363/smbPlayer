@@ -58,10 +58,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
-import java.io.OutputStream
 
 /**
  * 播放页：播放 [directory] 目录下的所有视频。
@@ -249,6 +246,9 @@ class PlayerActivity : AppCompatActivity() {
         binding = ActivityPlayerBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        setupPlayer()
+        setupControls()
+
         val serverId = intent.getStringExtra(EXTRA_SERVER_ID)
         val loaded = serverId?.let { ServerRepository.get(it) }
         if (loaded == null) {
@@ -263,9 +263,6 @@ class PlayerActivity : AppCompatActivity() {
         index = intent.getIntExtra(EXTRA_INDEX, 0)
 
         logInfo("播放: 服务器=${server.host} 共享=$shareName 目录=$directory 索引=$index")
-
-        setupPlayer()
-        setupControls()
 
         if (shareName.isBlank()) {
             logError("共享名为空")
@@ -415,7 +412,6 @@ class PlayerActivity : AppCompatActivity() {
         }
         index = newIndex
         val name = videos[newIndex]
-        val uri = displayUri(name)
         logInfo("开始播放: $name 位置=${startPositionMs}ms")
 
         // 换视频：作换上一条字幕的刷新
@@ -458,9 +454,10 @@ class PlayerActivity : AppCompatActivity() {
                     emptyList()
                 }
 
-                val factory = SmbDataSource.Factory(session, shareName, pathOf(name), uri)
+                val smbUri = displayUri(name)
+                val factory = SmbDataSource.Factory(session, shareName, pathOf(name), smbUri)
                 val videoSource = ProgressiveMediaSource.Factory(factory, DefaultExtractorsFactory())
-                    .createMediaSource(MediaItem.fromUri(uri))
+                    .createMediaSource(MediaItem.fromUri(smbUri))
 
                 // 期间用户可能又切了别的视频：被取代的这次不再动手
                 if (index != newIndex) return@launch
@@ -901,19 +898,49 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun showControls() {
-        binding.topBar.visibility = View.VISIBLE
-        binding.bottomBar.visibility = View.VISIBLE
+        animateBarIn(binding.topBar, -1)
+        animateBarIn(binding.bottomBar, 1)
         setBottomMargin(binding.tvSubtitleOverlay, 148)
         setBottomMargin(binding.tvHint, 168)
         scheduleHideControls()
     }
 
     private fun hideControls() {
-        binding.topBar.visibility = View.GONE
-        binding.bottomBar.visibility = View.GONE
+        animateBarOut(binding.topBar, -1)
+        animateBarOut(binding.bottomBar, 1)
         setBottomMargin(binding.tvSubtitleOverlay, 40)
         setBottomMargin(binding.tvHint, 72)
         mainHandler.removeCallbacks(hideControlsRunnable)
+    }
+
+    /** 滑动位移基准：优先用控件实际高度，未布局完成时按 100dp 兜底 */
+    private fun barSlideOffset(bar: View, sign: Int): Float {
+        val h = if (bar.height > 0) bar.height.toFloat() else 100f * resources.displayMetrics.density
+        return sign * h
+    }
+
+    /** 控制栏滑入（顶部从上、底部从下）并淡入 */
+    private fun animateBarIn(bar: View, fromSign: Int) {
+        bar.animate().cancel()
+        if (bar.visibility != View.VISIBLE) {
+            bar.visibility = View.VISIBLE
+            bar.alpha = 0f
+            bar.translationY = barSlideOffset(bar, fromSign)
+        }
+        bar.animate().translationY(0f).alpha(1f).setDuration(200L).start()
+    }
+
+    /** 控制栏滑出（顶部向上、底部向下）并淡出，结束后真正 GONE */
+    private fun animateBarOut(bar: View, toSign: Int) {
+        bar.animate().cancel()
+        if (bar.visibility != View.VISIBLE) return
+        bar.animate().translationY(barSlideOffset(bar, toSign))
+            .alpha(0f).setDuration(200L)
+            .withEndAction {
+                bar.visibility = View.GONE
+                bar.translationY = 0f
+                bar.alpha = 1f
+            }.start()
     }
 
     /** 调整叠加层距底部的距离：控制条显示时避让，隐藏时贴近底部 */

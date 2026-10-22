@@ -17,6 +17,14 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.27",
+            date = "2026-10-22",
+            lines = listOf(
+                "播放页界面美化：顶/底控制栏改为黑色渐变半透明遮罩，沉浸感更强；控制栏显示/隐藏加入 200ms 滑入滑出 + 淡入淡出过渡动画；播放键恢复 60dp 正圆；字幕叠加层改为透明底 + 黑描边阴影的标准样式",
+                "移除模拟器调试用的本地文件播放入口及相关代码，PlayerActivity 回到非 exported，正式包不再包含测试代码",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.26",
             date = "2026-10-21",
             lines = listOf(
