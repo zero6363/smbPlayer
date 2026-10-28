@@ -45,6 +45,19 @@
             android:maxLines="1"
             android:textColor="@color/on_surface_variant"
             android:textSize="12sp" />
+
+        <!-- 上次播放进度：一根细线，线到底表示已看完；没有记录时隐藏 -->
+        <ProgressBar
+            android:id="@+id/progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="2dp"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="2dp"
+            android:indeterminate="false"
+            android:max="1000"
+            android:progressDrawable="@drawable/playlist_progress"
+            android:visibility="gone" />
     </LinearLayout>
 
     <ImageView

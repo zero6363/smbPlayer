@@ -20,6 +20,9 @@ class EntryAdapter(
 
     private val items = mutableListOf<SmbEntry>()
 
+    /** 播放进度：条目名 -> 0f..1f，没有记录的视频不在表里 */
+    private var progressByName: Map<String, Float> = emptyMap()
+
     /** 多选模式：按条目名记录选中项 */
     private val selectedNames = linkedSetOf<String>()
 
@@ -29,9 +32,10 @@ class EntryAdapter(
     val selectedCount: Int
         get() = selectedNames.size
 
-    fun submit(list: List<SmbEntry>) {
+    fun submit(list: List<SmbEntry>, progress: Map<String, Float> = emptyMap()) {
         items.clear()
         items.addAll(list)
+        progressByName = progress
         selectedNames.clear()
         notifyDataSetChanged()
         onSelectionChanged(0)
@@ -106,6 +110,15 @@ class EntryAdapter(
                         append(date)
                     }
                 }
+            }
+
+            // 上次播放进度细线：只给有记录的视频显示，目录和无记录文件隐藏
+            val progressValue = progressByName[entry.name]
+            if (entry.isDirectory || progressValue == null) {
+                progress.visibility = View.GONE
+            } else {
+                progress.visibility = View.VISIBLE
+                progress.progress = (progressValue.coerceIn(0f, 1f) * progress.max).toInt()
             }
 
             // 选中态：高亮背景 + 勾选图标

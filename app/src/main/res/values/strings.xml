@@ -88,6 +88,7 @@
     <string name="subtitle_load_failed">字幕加载失败，按无字幕播放：%1$s</string>
     <string name="player_loading">正在加载视频…</string>
     <string name="player_playlist_title">播放列表</string>
+    <string name="player_resume_from">已从上次位置继续播放：%1$s</string>
 
     <!-- 图片查看页 -->
     <string name="image_viewer_title">图片</string>

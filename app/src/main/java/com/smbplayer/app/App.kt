@@ -3,6 +3,7 @@ package com.smbplayer.app
 import android.app.Application
 import android.os.Process
 import com.smbplayer.app.data.FavoriteRepository
+import com.smbplayer.app.data.PlaybackProgressRepository
 import com.smbplayer.app.data.ServerRepository
 import com.smbplayer.app.data.SettingsRepository
 import com.smbplayer.app.util.AppLog
@@ -17,6 +18,7 @@ class App : Application() {
         ServerRepository.init(this)
         SettingsRepository.init(this)
         FavoriteRepository.init(this)
+        PlaybackProgressRepository.init(this)
         AppLog.init(this)
         installCrashHandler()
         logInfo("应用启动")

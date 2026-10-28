@@ -34,6 +34,7 @@ import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.smbplayer.app.R
+import com.smbplayer.app.data.PlaybackProgressRepository
 import com.smbplayer.app.data.ServerRepository
 import com.smbplayer.app.data.SettingsRepository
 import com.smbplayer.app.data.SmbServer
@@ -46,6 +47,7 @@ import com.smbplayer.app.smb.SmbGateway
 import com.smbplayer.app.smb.SmbReadHandle
 import com.smbplayer.app.smb.SmbSession
 import com.smbplayer.app.ui.PlaylistAdapter
+import com.smbplayer.app.ui.PlaylistItem
 import com.smbplayer.app.util.formatDuration
 import com.smbplayer.app.util.isAlive
 import com.smbplayer.app.util.joinPath
@@ -78,6 +80,18 @@ class PlayerActivity : AppCompatActivity() {
     /** 当前目录下的全部视频文件名（已排序） */
     private val videos = mutableListOf<String>()
     private var index: Int = 0
+
+    /** 当前播放器里媒体的 SMB 路径：切集/删文件时列表索引会变，保存记录只认它 */
+    private var currentVideoPath: String? = null
+
+    /** 上次写入播放记录的位置，用于节流（每 5 秒最多写一次） */
+    private var lastSavedProgressMs = -1L
+
+    /**
+     * 本次播放中用户是否主动调整过位置（拖进度条 / 快进快退 / 滑动进度）。
+     * 用户明确选过的位置要以用户为准，不受「片头 10 秒不记录」「看完视频前 30 秒不覆盖」限制。
+     */
+    private var userAdjustedPosition = false
 
     /** 当前目录下的全部非目录文件名（用于在同级目录里找同名字幕） */
     private var allFileNames: Set<String> = emptySet()
@@ -130,6 +144,8 @@ class PlayerActivity : AppCompatActivity() {
 
     private val tickRunnable = object : Runnable {
         override fun run() {
+            // 播放中每 5 秒落一次播放记录（saveCurrentProgress 内部节流）
+            saveCurrentProgress()
             // 滑动调进度期间不自动刷新：seek 后的实际位置有延迟，
             // tick 会把进度条拉回旧位置，和滑动目标互相覆盖造成抖动
             if (!isSwiping) updateProgress()
@@ -146,6 +162,8 @@ class PlayerActivity : AppCompatActivity() {
             binding.progress.visibility =
                 if (playbackState == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
             if (playbackState == Player.STATE_ENDED) {
+                // 播放到结尾：先把当前视频记成「已看完」，进度线才会走到底
+                markCurrentCompleted()
                 playNext(fromUser = false)
             }
             updateControls()
@@ -199,6 +217,7 @@ class PlayerActivity : AppCompatActivity() {
             val offsetMs = (baseRate * dist + accel * dist * dist / 2f) * if (dx >= 0) 1f else -1f
             val target = swipeStartPosition + offsetMs.toLong()
             val clamped = if (duration > 0) target.coerceIn(0L, duration) else target.coerceAtLeast(0L)
+            userAdjustedPosition = true
             p.seekTo(clamped)
             updateProgress()
             // 滑动过程中实时提示滑到了几分几秒、相对按下点偏移多少
@@ -283,8 +302,15 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        // 切后台 / 息屏前落一次记录，避免进程被回收时丢掉最后一段进度
+        saveCurrentProgress(force = true)
+    }
+
     override fun onStop() {
         super.onStop()
+        saveCurrentProgress(force = true)
         // 关闭后台播放时，离开播放页（息屏 / 切后台）就暂停，避免后台出声
         if (!SettingsRepository.backgroundPlay) {
             player?.pause()
@@ -295,6 +321,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        saveCurrentProgress(force = true)
         mainHandler.removeCallbacksAndMessages(null)
         player?.let { p ->
             p.removeListener(playerListener)
@@ -329,6 +356,9 @@ class PlayerActivity : AppCompatActivity() {
                 // SmbSession.delete 内部已带「占用重试 + 兼容模式删除」，
                 // 句柄释放慢导致的 STATUS_SHARING_VIOLATION 会自动重删
                 withContext(Dispatchers.IO) { session.delete(shareName, path, false) }
+                // 文件已经不存在，对应的播放记录一并清掉
+                PlaybackProgressRepository.remove(server.id, shareName, path)
+                if (currentVideoPath == path) currentVideoPath = null
                 toast(getString(R.string.deleted, name))
                 videos.removeAt(index)
                 if (videos.isEmpty()) {
@@ -336,7 +366,7 @@ class PlayerActivity : AppCompatActivity() {
                     return@launch
                 }
                 index = index.coerceIn(0, videos.lastIndex)
-                playAt(index, startPositionMs = 0)
+                playAt(index)
             } catch (e: CancellationException) {
                 throw e // 用户离开播放页：正常取消，别在原位置续播（player 可能已释放）
             } catch (e: Exception) {
@@ -379,7 +409,7 @@ class PlayerActivity : AppCompatActivity() {
                 }
                 index = index.coerceIn(0, videos.lastIndex)
                 logInfo("播放列表加载完成: ${list.size} 个视频")
-                playAt(index, startPositionMs = 0)
+                playAt(index)
             } catch (e: CancellationException) {
                 throw e // 用户离开播放页：正常取消
             } catch (e: Exception) {
@@ -405,14 +435,24 @@ class PlayerActivity : AppCompatActivity() {
         return Uri.parse("smb://${server.host}/$shareName/$encodedPath")
     }
 
-    private fun playAt(newIndex: Int, startPositionMs: Long = 0) {
+    private fun playAt(newIndex: Int, startPositionMs: Long? = null) {
         if (newIndex !in videos.indices) {
             logError("播放索引越界: $newIndex, 列表大小=${videos.size}")
             return
         }
+        // 切走之前先把当前视频的播放进度记下来
+        saveCurrentProgress(force = true)
+        currentVideoPath = null
+        userAdjustedPosition = false
+
         index = newIndex
         val name = videos[newIndex]
-        logInfo("开始播放: $name 位置=${startPositionMs}ms")
+        // 没指定起点时接着上次的播放记录：看完的视频从头重播
+        val resumePosition = startPositionMs
+            ?: PlaybackProgressRepository.get(server.id, shareName, pathOf(name))?.resumePositionMs
+            ?: 0L
+        lastSavedProgressMs = resumePosition
+        logInfo("开始播放: $name 位置=${resumePosition}ms")
 
         // 换视频：作换上一条字幕的刷新
         mainHandler.removeCallbacks(subtitleTickRunnable)
@@ -463,9 +503,14 @@ class PlayerActivity : AppCompatActivity() {
                 if (index != newIndex) return@launch
 
                 val p = player ?: return@launch
-                p.setMediaSource(videoSource, startPositionMs)
+                currentVideoPath = pathOf(name)
+                lastSavedProgressMs = resumePosition
+                p.setMediaSource(videoSource, resumePosition)
                 p.prepare()
                 p.playWhenReady = true
+                if (resumePosition > 0L) {
+                    showHint(getString(R.string.player_resume_from, formatDuration(resumePosition)))
+                }
 
                 // 应用播放页常驻倍速（每次切集都继承，保证「上一集的速度带到下一集」）
                 normalSpeed = SettingsRepository.normalSpeed
@@ -497,6 +542,46 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    // ------------------------------------------------------------------ 播放记录
+
+    /**
+     * 保存当前视频的播放进度。
+     *
+     * [force] 为 false 时按位置变化节流（每 5 秒最多写一次），供播放中的 tick 调用；
+     * 切集、暂停、离开页面等关键节点传 true。
+     */
+    private fun saveCurrentProgress(force: Boolean = false) {
+        val p = player ?: return
+        val path = currentVideoPath ?: return
+        val duration = p.duration
+        if (duration <= 0L) return
+        val position = p.currentPosition
+        if (position < 0L) return
+        // 位置没变化就不用重复落盘；但用户主动拖回原位置（例如把看完的视频拖回 0）
+        // 时仍要写一次，否则「看完」状态会一直留在记录里
+        if (position == lastSavedProgressMs && !userAdjustedPosition) return
+        if (!force && abs(position - lastSavedProgressMs) < PROGRESS_SAVE_INTERVAL_MS) return
+        PlaybackProgressRepository.save(
+            serverId = server.id,
+            shareName = shareName,
+            path = path,
+            positionMs = position,
+            durationMs = duration,
+            explicit = userAdjustedPosition,
+        )
+        lastSavedProgressMs = position
+    }
+
+    /** 播放到结尾：强制记成已看完，播放列表里的进度线会走到底 */
+    private fun markCurrentCompleted() {
+        val p = player ?: return
+        val path = currentVideoPath ?: return
+        val duration = p.duration
+        if (duration <= 0L) return
+        PlaybackProgressRepository.save(server.id, shareName, path, duration, duration)
+        lastSavedProgressMs = duration
     }
 
     /** 刷新字幕叠加层：按当前播放位置找 active cue */
@@ -614,6 +699,7 @@ class PlayerActivity : AppCompatActivity() {
                 userSeeking = false
                 val duration = player?.duration ?: 0L
                 if (duration > 0) {
+                    userAdjustedPosition = true
                     player?.seekTo(duration * sb.progress / 1000)
                 }
                 scheduleHideControls()
@@ -683,6 +769,7 @@ class PlayerActivity : AppCompatActivity() {
         val stepMs = (1000.0 / fps).toLong().coerceAtLeast(1L)
         val duration = p.duration
         val target = (p.currentPosition + direction * stepMs).coerceAtLeast(0L)
+        userAdjustedPosition = true
         p.seekTo(if (duration > 0) target.coerceAtMost(duration) else target)
         updateProgress()
         showControls()
@@ -786,6 +873,7 @@ class PlayerActivity : AppCompatActivity() {
         val p = player ?: return
         if (p.isPlaying) {
             p.pause()
+            saveCurrentProgress(force = true)
             showHint(getString(R.string.hint_pause))
             showControls()
         } else {
@@ -799,6 +887,7 @@ class PlayerActivity : AppCompatActivity() {
         val p = player ?: return
         val target = (p.currentPosition + deltaMs).coerceAtLeast(0L)
         val duration = p.duration
+        userAdjustedPosition = true
         p.seekTo(if (duration > 0) target.coerceAtMost(duration) else target)
         updateProgress()
         showControls()
@@ -823,11 +912,22 @@ class PlayerActivity : AppCompatActivity() {
     // ------------------------------------------------------------------ 播放列表弹窗
 
     private fun showPlaylist() {
+        // 打开列表前先落一次当前进度，正在播放的视频也能看到最新的线
+        saveCurrentProgress(force = true)
+        val progressByPath = PlaybackProgressRepository.getAll(
+            server.id,
+            shareName,
+            videos.map { pathOf(it) },
+        )
+        val items = videos.map { name ->
+            PlaylistItem(name, progressByPath[pathOf(name)]?.displayFraction)
+        }
+
         val view = LayoutInflater.from(this).inflate(R.layout.dialog_playlist, null)
         val b = DialogPlaylistBinding.bind(view)
         val layoutManager = LinearLayoutManager(this)
         b.recyclerPlaylist.layoutManager = layoutManager
-        b.recyclerPlaylist.adapter = PlaylistAdapter(videos, index) { position ->
+        b.recyclerPlaylist.adapter = PlaylistAdapter(items, index) { position ->
             playlistDialog?.dismiss()
             if (position != index) playAt(position)
         }
@@ -980,6 +1080,9 @@ class PlayerActivity : AppCompatActivity() {
 
         /** 字幕叠加层刷新间隔 */
         private const val SUBTITLE_TICK_MS = 100L
+
+        /** 播放记录落盘的最小位置变化（避免每 500ms 都写 SharedPreferences） */
+        private const val PROGRESS_SAVE_INTERVAL_MS = 5_000L
 
         fun intent(
             context: Context,

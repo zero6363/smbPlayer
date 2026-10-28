@@ -14,6 +14,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.smbplayer.app.R
 import com.smbplayer.app.data.FavoritePath
 import com.smbplayer.app.data.FavoriteRepository
+import com.smbplayer.app.data.PlaybackProgressRepository
 import com.smbplayer.app.data.ServerRepository
 import com.smbplayer.app.data.SettingsRepository
 import com.smbplayer.app.data.SmbServer
@@ -309,7 +310,7 @@ class BrowseActivity : AppCompatActivity() {
             SettingsRepository.sortField,
             SettingsRepository.sortAscending,
         )
-        adapter.submit(entries)
+        adapter.submit(entries, progressByName(entries))
         updateHeader(entries)
         binding.recycler.scrollToPosition(0)
     }
@@ -320,6 +321,19 @@ class BrowseActivity : AppCompatActivity() {
             .map { it.name }
             .sortedWith(String.CASE_INSENSITIVE_ORDER)
             .toList()
+
+    /** 当前目录里视频的播放进度（条目名 -> 0f..1f），供列表细线展示 */
+    private fun progressByName(list: List<SmbEntry>): Map<String, Float> {
+        val videos = list.filter { !it.isDirectory && VideoFormats.isVideo(it.name) }
+        if (videos.isEmpty()) return emptyMap()
+        val pathByName = videos.associate { it.name to joinPath(currentPath, it.name) }
+        val saved = PlaybackProgressRepository.getAll(server.id, shareName, pathByName.values)
+        return buildMap {
+            pathByName.forEach { (name, path) ->
+                saved[path]?.let { put(name, it.displayFraction) }
+            }
+        }
+    }
 
     private fun imageNames(): List<String> =
         entries.asSequence()
@@ -402,7 +416,7 @@ class BrowseActivity : AppCompatActivity() {
                     SettingsRepository.sortField,
                     SettingsRepository.sortAscending,
                 )
-                adapter.submit(entries)
+                adapter.submit(entries, progressByName(entries))
                 showLoading(false)
                 logInfo("目录加载完成: ${list.size} 项")
                 updateHeader(list)
@@ -535,6 +549,13 @@ class BrowseActivity : AppCompatActivity() {
                     withContext(Dispatchers.IO) {
                         session.delete(shareName, path, entry.isDirectory)
                     }
+                    // 删除成功：同步清掉对应的播放记录（目录会连带清掉子视频的记录）
+                    PlaybackProgressRepository.remove(
+                        server.id,
+                        shareName,
+                        path,
+                        includeChildren = entry.isDirectory,
+                    )
                     ok++
                     logInfo("已删除: $path")
                 } catch (e: CancellationException) {
