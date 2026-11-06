@@ -33,6 +33,38 @@
             android:textSize="12sp"
             android:visibility="gone" />
 
+        <!-- 播放记录：顶部一行扁长方形卡片，左右滑动 -->
+        <LinearLayout
+            android:id="@+id/history_section"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingTop="10dp"
+                android:paddingBottom="4dp"
+                android:text="@string/history_section_title"
+                android:textColor="@color/on_surface_variant"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recycler_history"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clipToPadding="false"
+                android:overScrollMode="ifContentScrolls"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="6dp"
+                android:scrollbars="none" />
+        </LinearLayout>
+
         <!-- 收藏路径快捷入口 -->
         <LinearLayout
             android:id="@+id/favorite_section"

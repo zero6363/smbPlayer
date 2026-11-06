@@ -6,7 +6,8 @@ import android.content.SharedPreferences
 /**
  * 播放器设置持久化。
  *
- * 存储后台播放开关、长按临时倍速、播放页常驻倍速、手势灵敏度等用户偏好。
+ * 存储后台播放开关、长按临时倍速、播放页常驻倍速、手势灵敏度、
+ * 首页播放记录显示开关与显示条数等用户偏好。
  */
 object SettingsRepository {
 
@@ -17,6 +18,13 @@ object SettingsRepository {
     private const val KEY_NORMAL_SPEED = "normal_speed"
     private const val KEY_SORT_FIELD = "sort_field"
     private const val KEY_SORT_ASCENDING = "sort_ascending"
+    private const val KEY_HISTORY_VISIBLE = "history_visible"
+    private const val KEY_HISTORY_COUNT = "history_count"
+
+    /** 首页播放记录：默认显示、默认最多 12 条 */
+    const val DEFAULT_HISTORY_COUNT = 12
+    const val MIN_HISTORY_COUNT = 1
+    const val MAX_HISTORY_COUNT = 100
 
     private val lock = Any()
 
@@ -84,5 +92,29 @@ object SettingsRepository {
         get() = store().getBoolean(KEY_SORT_ASCENDING, SortOptions.DEFAULT_ASCENDING)
         set(value) {
             store().edit().putBoolean(KEY_SORT_ASCENDING, value).apply()
+        }
+
+    /**
+     * 首页是否显示播放记录。默认显示。
+     * 关闭只是隐藏首页卡片，播放进度仍照常保存，不影响播放页续播。
+     */
+    var historyVisible: Boolean
+        get() = store().getBoolean(KEY_HISTORY_VISIBLE, true)
+        set(value) {
+            store().edit().putBoolean(KEY_HISTORY_VISIBLE, value).apply()
+        }
+
+    /**
+     * 首页播放记录最多显示多少条，默认 [DEFAULT_HISTORY_COUNT]（12 条）。
+     * 只控制首页展示数量；底层播放进度记录仍按 [PlaybackProgressRepository] 的上限保留，
+     * 避免条数调小后其它视频的续播位置被丢掉。
+     */
+    var historyCount: Int
+        get() = store().getInt(KEY_HISTORY_COUNT, DEFAULT_HISTORY_COUNT)
+            .coerceIn(MIN_HISTORY_COUNT, MAX_HISTORY_COUNT)
+        set(value) {
+            store().edit()
+                .putInt(KEY_HISTORY_COUNT, value.coerceIn(MIN_HISTORY_COUNT, MAX_HISTORY_COUNT))
+                .apply()
         }
 }

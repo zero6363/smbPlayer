@@ -113,6 +113,31 @@ object PlaybackProgressRepository {
     }
 
     /**
+     * 按最近播放时间倒序返回全部记录，供首页「播放记录」横向列表使用。
+     *
+     * 复合 key 在这里拆回 服务器 ID / 共享名 / 文件路径；历史不另存一份，
+     * 直接复用进度数据，删除视频时调用 [remove] 就能同步清掉对应卡片。
+     * 显示条数由设置控制，这里一次给全（最多 [MAX_RECORDS] 条）。
+     */
+    fun recent(): List<PlaybackHistory> = synchronized(lock) {
+        records().entries.mapNotNull { (k, progress) ->
+            val parts = k.split(KEY_SEPARATOR, limit = 3)
+            if (parts.size != 3 || parts[0].isEmpty() || parts[2].isEmpty()) {
+                null
+            } else {
+                PlaybackHistory(
+                    serverId = parts[0],
+                    shareName = parts[1],
+                    path = parts[2],
+                    positionMs = progress.positionMs,
+                    durationMs = progress.durationMs,
+                    updatedAt = progress.updatedAt,
+                )
+            }
+        }.sortedByDescending { it.updatedAt }
+    }
+
+    /**
      * 保存一条播放记录。
      *
      * - 视频看完（剩余 2% 或最后 10 秒）时位置记为总时长，进度线走到底；

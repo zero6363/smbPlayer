@@ -81,6 +81,9 @@ class PlayerActivity : AppCompatActivity() {
     private val videos = mutableListOf<String>()
     private var index: Int = 0
 
+    /** 从首页播放记录进入时要定位的文件名；只在首次加载播放列表时用一次 */
+    private var targetName: String? = null
+
     /** 当前播放器里媒体的 SMB 路径：切集/删文件时列表索引会变，保存记录只认它 */
     private var currentVideoPath: String? = null
 
@@ -280,6 +283,7 @@ class PlayerActivity : AppCompatActivity() {
         shareName = intent.getStringExtra(EXTRA_SHARE).orEmpty()
         directory = intent.getStringExtra(EXTRA_DIR).orEmpty()
         index = intent.getIntExtra(EXTRA_INDEX, 0)
+        targetName = intent.getStringExtra(EXTRA_TARGET_NAME)?.takeIf { it.isNotEmpty() }
 
         logInfo("播放: 服务器=${server.host} 共享=$shareName 目录=$directory 索引=$index")
 
@@ -408,6 +412,18 @@ class PlayerActivity : AppCompatActivity() {
                     return@launch
                 }
                 index = index.coerceIn(0, videos.lastIndex)
+                // 从首页播放记录进来：按文件名找到对应的一集，点卡片就能直接续播。
+                // 文件已被删/改名时留在本目录，从第一个视频开始，不让点击落空。
+                val target = targetName
+                targetName = null
+                if (target != null) {
+                    val found = videos.indexOfFirst { it.equals(target, ignoreCase = true) }
+                    if (found >= 0) {
+                        index = found
+                    } else {
+                        toast(getString(R.string.history_target_missing, target))
+                    }
+                }
                 logInfo("播放列表加载完成: ${list.size} 个视频")
                 playAt(index)
             } catch (e: CancellationException) {
@@ -1064,6 +1080,7 @@ class PlayerActivity : AppCompatActivity() {
         private const val EXTRA_SHARE = "extra_share"
         private const val EXTRA_DIR = "extra_dir"
         private const val EXTRA_INDEX = "extra_index"
+        private const val EXTRA_TARGET_NAME = "extra_target_name"
 
         private const val TICK_INTERVAL_MS = 500L
         private const val CONTROL_HIDE_DELAY_MS = 4_000L
@@ -1084,16 +1101,24 @@ class PlayerActivity : AppCompatActivity() {
         /** 播放记录落盘的最小位置变化（避免每 500ms 都写 SharedPreferences） */
         private const val PROGRESS_SAVE_INTERVAL_MS = 5_000L
 
+        /**
+         * [targetName] 供首页播放记录使用：加载播放列表后按文件名定位到这一集；
+         * 不传时沿用 [index]（目录列表点视频 / 播放全部走原来的逻辑）。
+         */
         fun intent(
             context: Context,
             serverId: String,
             share: String,
             directory: String,
             index: Int,
+            targetName: String? = null,
         ): Intent = Intent(context, PlayerActivity::class.java)
             .putExtra(EXTRA_SERVER_ID, serverId)
             .putExtra(EXTRA_SHARE, share)
             .putExtra(EXTRA_DIR, directory)
             .putExtra(EXTRA_INDEX, index)
+            .apply {
+                if (!targetName.isNullOrEmpty()) putExtra(EXTRA_TARGET_NAME, targetName)
+            }
     }
 }

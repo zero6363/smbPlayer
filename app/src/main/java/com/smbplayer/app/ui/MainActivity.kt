@@ -4,19 +4,25 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.smbplayer.app.R
 import com.smbplayer.app.data.FavoritePath
 import com.smbplayer.app.data.FavoriteRepository
+import com.smbplayer.app.data.PlaybackHistory
+import com.smbplayer.app.data.PlaybackProgressRepository
 import com.smbplayer.app.data.ServerRepository
+import com.smbplayer.app.data.SettingsRepository
 import com.smbplayer.app.data.SmbServer
 import com.smbplayer.app.databinding.ActivityMainBinding
 import com.smbplayer.app.databinding.DialogServerEditBinding
+import com.smbplayer.app.player.PlayerActivity
 import com.smbplayer.app.smb.SmbGateway
 import com.smbplayer.app.util.AppLog
 import com.smbplayer.app.util.SmbPath
+import com.smbplayer.app.util.formatDuration
 import com.smbplayer.app.util.toast
 
 class MainActivity : AppCompatActivity() {
@@ -24,6 +30,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var adapter: ServerAdapter
     private lateinit var favoriteAdapter: FavoriteAdapter
+    private lateinit var historyAdapter: HistoryAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,6 +54,15 @@ class MainActivity : AppCompatActivity() {
         )
         binding.recyclerFavorite.layoutManager = LinearLayoutManager(this)
         binding.recyclerFavorite.adapter = favoriteAdapter
+
+        // 播放记录：顶部一行扁长方形卡片，左右滑动
+        historyAdapter = HistoryAdapter(
+            onClick = { openHistory(it) },
+            onLongClick = { confirmDeleteHistory(it) },
+        )
+        binding.recyclerHistory.layoutManager =
+            LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        binding.recyclerHistory.adapter = historyAdapter
 
         binding.fabAdd.setOnClickListener { showEditDialog(null) }
 
@@ -85,6 +101,7 @@ class MainActivity : AppCompatActivity() {
         binding.emptyView.visibility =
             if (list.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
         refreshFavorites()
+        refreshHistory()
     }
 
     private fun refreshFavorites() {
@@ -92,6 +109,76 @@ class MainActivity : AppCompatActivity() {
         favoriteAdapter.submit(favorites)
         binding.favoriteSection.visibility =
             if (favorites.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
+    }
+
+    /**
+     * 首页播放记录：直接复用播放进度记录，按最近播放时间取前 N 条。
+     * 服务器已被删除的记录进不去播放页，直接跳过（但保留数据，万一以后重新添加）。
+     */
+    private fun refreshHistory() {
+        if (!SettingsRepository.historyVisible) {
+            binding.historySection.visibility = View.GONE
+            return
+        }
+        val cards = PlaybackProgressRepository.recent().asSequence()
+            .mapNotNull { record ->
+                val server = ServerRepository.get(record.serverId) ?: return@mapNotNull null
+                HistoryCard(
+                    record = record,
+                    serverName = server.name.ifBlank { server.displayHost },
+                    progressLabel = if (record.completed) {
+                        getString(R.string.history_completed)
+                    } else {
+                        getString(
+                            R.string.history_progress_format,
+                            formatDuration(record.positionMs),
+                            formatDuration(record.durationMs),
+                        )
+                    },
+                )
+            }
+            .take(SettingsRepository.historyCount)
+            .toList()
+        historyAdapter.submit(cards)
+        binding.historySection.visibility =
+            if (cards.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    /**
+     * 点播放记录直接续播：带上记录当时用的共享名（共享名现在只对单次会话生效，
+     * 服务器配置里可能为空），并让播放页按文件名定位到播放列表中的对应一集。
+     */
+    private fun openHistory(record: PlaybackHistory) {
+        val server = ServerRepository.get(record.serverId)
+        if (server == null) {
+            toast(R.string.history_server_missing)
+            refreshHistory()
+            return
+        }
+        startActivity(
+            PlayerActivity.intent(
+                context = this,
+                serverId = server.id,
+                share = record.shareName,
+                directory = record.directory,
+                index = 0,
+                targetName = record.name,
+            )
+        )
+    }
+
+    /** 长按删除单条记录（同时清掉该视频的续播位置，二次确认避免误删） */
+    private fun confirmDeleteHistory(record: PlaybackHistory) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.history_delete_title)
+            .setMessage(getString(R.string.history_delete_message, record.name))
+            .setPositiveButton(R.string.delete_confirm) { _, _ ->
+                PlaybackProgressRepository.remove(record.serverId, record.shareName, record.path)
+                refreshHistory()
+                toast(getString(R.string.history_removed, record.name))
+            }
+            .setNegativeButton(R.string.server_cancel, null)
+            .show()
     }
 
     private fun openBrowse(server: SmbServer) {
