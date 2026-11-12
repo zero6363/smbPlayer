@@ -123,11 +123,19 @@
 
     <!-- 首页播放记录 -->
     <string name="history_section_title">播放记录</string>
+    <string name="history_section_hint">长按可置顶 / 删除</string>
     <string name="history_progress_format">%1$s / %2$s</string>
     <string name="history_completed">已看完</string>
     <string name="history_subtitle">%1$s · %2$s</string>
+    <string name="history_pin">置顶（永久排在最前）</string>
+    <string name="history_unpin">取消置顶</string>
+    <string name="history_pinned">已置顶：%1$s</string>
+    <string name="history_unpinned">已取消置顶：%1$s</string>
+    <string name="history_pin_badge">已置顶</string>
     <string name="history_delete_title">删除播放记录</string>
+    <string name="history_delete_action">删除记录</string>
     <string name="history_delete_message">确定从播放记录中移除「%1$s」吗？该视频的续播位置也会一并清除。</string>
+    <string name="history_delete_message_pinned">「%1$s」已置顶。删除后会取消置顶并从播放记录中移除，该视频的续播位置也会一并清除。</string>
     <string name="history_removed">已移除：%1$s</string>
     <string name="history_server_missing">该服务器已删除，无法播放此记录</string>
     <string name="history_target_missing">「%1$s」已不在目录中，改从第一个视频播放</string>
@@ -154,6 +162,7 @@
     <string name="keyframe_next">下一帧</string>
     <string name="keyframe_save">导出当前帧</string>
     <string name="keyframe_saved_name">已保存：%1$s</string>
+    <string name="keyframe_saved_folder">已保存到视频所在文件夹：%1$s</string>
     <string name="keyframe_save_failed">保存失败：%1$s</string>
     <string name="keyframe_not_ready">画面尚未就绪，请稍后再试</string>
     <string name="hint_seek">已跳至 %1$s</string>
@@ -183,10 +192,12 @@
     <string name="settings_speed_hint">播放页长按屏幕时的临时倍速</string>
     <string name="settings_background_play">后台播放</string>
     <string name="settings_background_play_hint">关闭后，离开播放页或息屏时会暂停；开启则继续在后台播放</string>
+    <string name="settings_frame_save_to_folder">截图保存到视频文件夹</string>
+    <string name="settings_frame_save_to_folder_hint">开启后「导出当前帧」直接写入视频所在的共享文件夹；关闭则保存到相册 Pictures/SMBPlayer</string>
     <string name="settings_history_visible">首页显示播放记录</string>
     <string name="settings_history_visible_hint">关闭后隐藏首页的播放记录卡片；播放进度仍会保存，不影响续播</string>
     <string name="settings_history_count">播放记录条数</string>
-    <string name="settings_history_count_hint">首页最多显示最近多少条播放记录，默认 12 条</string>
+    <string name="settings_history_count_hint">首页最多显示最近多少条播放记录，默认 12 条；置顶的记录不受此限制</string>
     <string name="settings_history_count_value">%1$d 条</string>
     <string name="settings_history_count_dialog_hint">1–100</string>
     <string name="settings_history_count_invalid">请输入 1–100 之间的数字</string>

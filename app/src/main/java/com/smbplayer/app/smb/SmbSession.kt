@@ -213,6 +213,56 @@ class SmbSession(private val server: SmbServer) : Closeable {
     }
 
     /**
+     * 判断 [path] 是否是已存在的文件。阻塞。
+     *
+     * 用于导出帧、上传等场景做重名检查（重名时客户端自己加序号，避免覆盖）。
+     */
+    fun fileExists(shareName: String, path: String): Boolean = withRetry(shareName) { sh ->
+        val share = sh ?: throw IOException("未连接到共享「$shareName」")
+        share.fileExists(path)
+    }
+
+    /**
+     * 把 [data] 一次性写成文件（同名覆盖）。阻塞。
+     *
+     * 打开失败若是「权限不足」，换更宽松的访问掩码再试：部分 NAS / 路由器 USB 共享
+     * 对 GENERIC_WRITE 直接拒绝，MAXIMUM_ALLOWED 反而放行（同删除的兼容处理思路）。
+     */
+    fun writeFile(shareName: String, path: String, data: ByteArray) {
+        withRetry(shareName) { sh ->
+            val share = sh ?: throw IOException("未连接到共享「$shareName」")
+            var last: SMBApiException? = null
+            for (mask in WRITE_ACCESS_MASKS) {
+                try {
+                    openForWrite(share, path, mask).use { f ->
+                        f.outputStream.use { os ->
+                            os.write(data)
+                            os.flush()
+                        }
+                    }
+                    return@withRetry
+                } catch (e: SMBApiException) {
+                    last = e
+                    if (e.status != NtStatus.STATUS_ACCESS_DENIED) throw e
+                    logInfo("写入被拒绝(${e.status.name})，换更宽松的权限重试: $path")
+                }
+            }
+            throw last ?: IOException("写入失败：$path")
+        }
+    }
+
+    /** 按给定访问掩码打开目标用于写入（FILE_OVERWRITE_IF：存在则覆盖，不存在则新建） */
+    private fun openForWrite(share: DiskShare, path: String, accessMask: EnumSet<AccessMask>): File =
+        share.openFile(
+            path,
+            accessMask,
+            EnumSet.of(FileAttributes.FILE_ATTRIBUTE_NORMAL),
+            EnumSet.of(SMB2ShareAccess.FILE_SHARE_READ, SMB2ShareAccess.FILE_SHARE_WRITE),
+            SMB2CreateDisposition.FILE_OVERWRITE_IF,
+            EnumSet.of(SMB2CreateOptions.FILE_NON_DIRECTORY_FILE),
+        )
+
+    /**
      * 删除文件或目录（目录递归删除）。阻塞。
      *
      * 兜底顺序：
@@ -548,6 +598,22 @@ class SmbSession(private val server: SmbServer) : Closeable {
          */
         private const val SHARING_RETRY_ROUNDS = 6
         private const val SHARING_RETRY_DELAY_MS = 400L
+
+        /**
+         * 写入文件的访问掩码阶梯：从标准写权限逐级放宽。
+         * 部分 NAS / 路由器共享对只带 GENERIC_WRITE 的打开返回 ACCESS_DENIED。
+         */
+        private val WRITE_ACCESS_MASKS: List<EnumSet<AccessMask>> = listOf(
+            EnumSet.of(
+                AccessMask.GENERIC_WRITE,
+                AccessMask.FILE_READ_ATTRIBUTES,
+                AccessMask.FILE_WRITE_ATTRIBUTES,
+                AccessMask.SYNCHRONIZE,
+            ),
+            EnumSet.of(AccessMask.GENERIC_WRITE, AccessMask.GENERIC_READ, AccessMask.SYNCHRONIZE),
+            EnumSet.of(AccessMask.MAXIMUM_ALLOWED),
+            EnumSet.of(AccessMask.GENERIC_ALL),
+        )
 
         private val ENTRY_ORDER: Comparator<SmbEntry> =
             compareByDescending<SmbEntry> { it.isDirectory }

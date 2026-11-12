@@ -1,7 +1,9 @@
 package com.smbplayer.app.ui
 
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.smbplayer.app.R
 import com.smbplayer.app.data.PlaybackHistory
@@ -45,6 +47,17 @@ class HistoryAdapter(
                 item.progressLabel,
             )
             progress.progress = (item.record.displayFraction * 1000).toInt()
+
+            // 置顶记录：右上角显示图钉 + 边框换成主题色，一眼能区分
+            val pinned = item.record.pinned
+            iconPin.visibility = if (pinned) View.VISIBLE else View.GONE
+            val density = root.resources.displayMetrics.density
+            root.strokeColor = ContextCompat.getColor(
+                root.context,
+                if (pinned) R.color.primary else R.color.outline,
+            )
+            root.strokeWidth = ((if (pinned) 1.5f else 1f) * density).toInt()
+
             root.setOnClickListener { onClick(item.record) }
             root.setOnLongClickListener {
                 onLongClick(item.record)

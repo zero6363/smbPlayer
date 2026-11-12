@@ -7,7 +7,7 @@ import android.content.SharedPreferences
  * 播放器设置持久化。
  *
  * 存储后台播放开关、长按临时倍速、播放页常驻倍速、手势灵敏度、
- * 首页播放记录显示开关与显示条数等用户偏好。
+ * 首页播放记录显示开关与显示条数、导出帧保存位置等用户偏好。
  */
 object SettingsRepository {
 
@@ -20,6 +20,7 @@ object SettingsRepository {
     private const val KEY_SORT_ASCENDING = "sort_ascending"
     private const val KEY_HISTORY_VISIBLE = "history_visible"
     private const val KEY_HISTORY_COUNT = "history_count"
+    private const val KEY_FRAME_SAVE_TO_FOLDER = "frame_save_to_folder"
 
     /** 首页播放记录：默认显示、默认最多 12 条 */
     const val DEFAULT_HISTORY_COUNT = 12
@@ -116,5 +117,15 @@ object SettingsRepository {
             store().edit()
                 .putInt(KEY_HISTORY_COUNT, value.coerceIn(MIN_HISTORY_COUNT, MAX_HISTORY_COUNT))
                 .apply()
+        }
+
+    /**
+     * 播放页「导出当前帧」的保存位置：true = 写到视频所在的 SMB 文件夹，
+     * false = 保存到手机相册 Pictures/SMBPlayer（默认，保持原有行为）。
+     */
+    var frameSaveToVideoFolder: Boolean
+        get() = store().getBoolean(KEY_FRAME_SAVE_TO_FOLDER, false)
+        set(value) {
+            store().edit().putBoolean(KEY_FRAME_SAVE_TO_FOLDER, value).apply()
         }
 }

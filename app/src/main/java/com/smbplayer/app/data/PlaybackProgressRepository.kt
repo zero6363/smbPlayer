@@ -62,7 +62,10 @@ object PlaybackProgressRepository {
     private const val PREFS_NAME = "smb_playback_progress"
     private const val KEY_LIST = "progress"
 
-    /** 最多保留的记录数，超出后按最近更新时间淘汰最旧的 */
+    /** 置顶记录：JSON 对象，key 与播放记录相同，value 为置顶时间 */
+    private const val KEY_PINS = "pins"
+
+    /** 最多保留的记录数，超出后按最近更新时间淘汰最旧的（置顶记录不参与淘汰） */
     private const val MAX_RECORDS = 500
 
     /** 播放到剩余 2% 或最后 10 秒即视为看完 */
@@ -79,6 +82,9 @@ object PlaybackProgressRepository {
 
     /** 内存缓存：避免播放列表每次绑定都重新解析整份 JSON */
     private var cache: MutableMap<String, PlaybackProgress>? = null
+
+    /** 置顶标记缓存：key -> 置顶时间 */
+    private var pinCache: MutableMap<String, Long>? = null
 
     fun init(context: Context) {
         if (prefs != null) return
@@ -113,13 +119,15 @@ object PlaybackProgressRepository {
     }
 
     /**
-     * 按最近播放时间倒序返回全部记录，供首页「播放记录」横向列表使用。
+     * 按「置顶优先 + 最近播放时间倒序」返回全部记录，供首页「播放记录」横向列表使用。
      *
+     * 置顶的记录永远排在最前面（后置顶的更靠前），其余按最近播放时间倒序；
      * 复合 key 在这里拆回 服务器 ID / 共享名 / 文件路径；历史不另存一份，
      * 直接复用进度数据，删除视频时调用 [remove] 就能同步清掉对应卡片。
      * 显示条数由设置控制，这里一次给全（最多 [MAX_RECORDS] 条）。
      */
     fun recent(): List<PlaybackHistory> = synchronized(lock) {
+        val pins = pins()
         records().entries.mapNotNull { (k, progress) ->
             val parts = k.split(KEY_SEPARATOR, limit = 3)
             if (parts.size != 3 || parts[0].isEmpty() || parts[2].isEmpty()) {
@@ -132,9 +140,46 @@ object PlaybackProgressRepository {
                     positionMs = progress.positionMs,
                     durationMs = progress.durationMs,
                     updatedAt = progress.updatedAt,
+                    pinned = pins.containsKey(k),
+                    pinnedAt = pins[k] ?: 0L,
                 )
             }
-        }.sortedByDescending { it.updatedAt }
+        }.sortedWith(
+            compareByDescending<PlaybackHistory> { it.pinned }
+                .thenByDescending { it.pinnedAt }
+                .thenByDescending { it.updatedAt }
+        )
+    }
+
+    /** 该记录是否置顶 */
+    fun isPinned(serverId: String, shareName: String, path: String): Boolean =
+        synchronized(lock) { pins().containsKey(key(serverId, shareName, path)) }
+
+    /**
+     * 置顶 / 取消置顶一条记录。
+     *
+     * 置顶标记按复合 key 单独存放，不写进播放进度本身：重复播放同一视频、
+     * 更新续播位置都不会冲掉置顶状态；置顶记录也不会被 [MAX_RECORDS] 淘汰。
+     */
+    fun setPinned(
+        serverId: String,
+        shareName: String,
+        path: String,
+        pinned: Boolean,
+    ) {
+        if (serverId.isEmpty() || path.isEmpty()) return
+        synchronized(lock) {
+            val k = key(serverId, shareName, path)
+            val pins = pins()
+            if (pinned) {
+                if (!pins.containsKey(k)) {
+                    pins[k] = System.currentTimeMillis()
+                    writePins(pins)
+                }
+            } else if (pins.remove(k) != null) {
+                writePins(pins)
+            }
+        }
     }
 
     /**
@@ -192,7 +237,14 @@ object PlaybackProgressRepository {
                 listOf(exact).filter { records.containsKey(it) }
             }
             if (targets.isEmpty()) return
-            targets.forEach { records.remove(it) }
+            val pins = pins()
+            var pinsChanged = false
+            targets.forEach {
+                records.remove(it)
+                // 记录没了，置顶标记一起清掉，避免残留成孤儿
+                if (pins.remove(it) != null) pinsChanged = true
+            }
+            if (pinsChanged) writePins(pins)
             write(records)
         }
     }
@@ -225,13 +277,48 @@ object PlaybackProgressRepository {
     }
 
     private fun pruneAndWrite(records: MutableMap<String, PlaybackProgress>) {
+        val pins = pins()
+        // 记录已被删掉的置顶标记先清一遍，避免残留
+        val orphans = pins.keys.filter { it !in records.keys }
+        if (orphans.isNotEmpty()) {
+            orphans.forEach { pins.remove(it) }
+            writePins(pins)
+        }
         if (records.size > MAX_RECORDS) {
+            // 置顶记录永不自动淘汰（用户手动置顶的就是想一直留着），
+            // 只从「未置顶」的记录里挑最旧的淘汰
             records.entries
+                .filter { !pins.containsKey(it.key) }
                 .sortedBy { it.value.updatedAt }
                 .take(records.size - MAX_RECORDS)
                 .forEach { records.remove(it.key) }
         }
         write(records)
+    }
+
+    /** 读取置顶标记（首次调用时从 SharedPreferences 解析） */
+    private fun pins(): MutableMap<String, Long> {
+        pinCache?.let { return it }
+        val map = mutableMapOf<String, Long>()
+        val raw = store().getString(KEY_PINS, null)
+        if (!raw.isNullOrEmpty()) {
+            try {
+                val o = JSONObject(raw)
+                o.keys().forEach { k ->
+                    if (k.isNotEmpty()) map[k] = o.optLong(k, 0L)
+                }
+            } catch (_: Throwable) {
+                // 数据损坏时按未置顶处理，不影响播放
+            }
+        }
+        pinCache = map
+        return map
+    }
+
+    private fun writePins(pins: Map<String, Long>) {
+        val o = JSONObject()
+        pins.forEach { (k, pinnedAt) -> o.put(k, pinnedAt) }
+        store().edit().putString(KEY_PINS, o.toString()).apply()
     }
 
     private fun write(records: Map<String, PlaybackProgress>) {

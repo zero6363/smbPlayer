@@ -16,6 +16,10 @@ data class PlaybackHistory(
     val positionMs: Long,
     val durationMs: Long,
     val updatedAt: Long,
+    /** 是否置顶：置顶的记录永远排在首页最前面，且不受「播放记录条数」限制 */
+    val pinned: Boolean = false,
+    /** 置顶时间：越晚置顶越靠前（仅 [pinned] 为 true 时有意义） */
+    val pinnedAt: Long = 0L,
 ) {
     /** 文件名（路径最后一段） */
     val name: String get() = path.trim('/').substringAfterLast('/')

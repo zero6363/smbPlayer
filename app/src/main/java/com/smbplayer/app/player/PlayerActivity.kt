@@ -49,6 +49,7 @@ import com.smbplayer.app.smb.SmbSession
 import com.smbplayer.app.ui.PlaylistAdapter
 import com.smbplayer.app.ui.PlaylistItem
 import com.smbplayer.app.util.formatDuration
+import com.smbplayer.app.util.formatSize
 import com.smbplayer.app.util.isAlive
 import com.smbplayer.app.util.joinPath
 import com.smbplayer.app.util.logError
@@ -60,6 +61,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 
 /**
@@ -806,10 +808,13 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     /**
-     * 导出当前视频帧到相册（PNG 无损，最高品质）。
+     * 导出当前视频帧。
      *
      * 视频画面渲染在 TextureView 上（布局里 surface_type=texture_view），
      * 必须从 TextureView 取位图——root.draw 截的是 View 层，抓不到视频图层，所以之前全黑。
+     *
+     * 保存位置由设置决定：默认写进手机相册 Pictures/SMBPlayer；
+     * 开启「截图保存到视频文件夹」后写回视频所在的 SMB 目录（同样 PNG 无损）。
      */
     private fun saveCurrentFrame() {
         val texture = binding.playerView.videoSurfaceView as? TextureView
@@ -821,7 +826,66 @@ class PlayerActivity : AppCompatActivity() {
         // 保存期间置灰，防止连点重复导出同一帧
         binding.groupFrameSave.isEnabled = false
         binding.groupFrameSave.alpha = 0.4f
-        saveBitmapToGallery(frame, frameFileName())
+        val filename = frameFileName()
+        if (SettingsRepository.frameSaveToVideoFolder) {
+            saveFrameToVideoFolder(frame, filename)
+        } else {
+            saveBitmapToGallery(frame, filename)
+        }
+    }
+
+    /**
+     * 导出帧到视频所在文件夹：PNG 无损写回当前 SMB 目录，和视频放在一起。
+     * 远端已有同名文件时自动加序号（`xxx_1.png`），不覆盖之前导出的帧。
+     */
+    private fun saveFrameToVideoFolder(bitmap: Bitmap, filename: String) {
+        lifecycleScope.launch {
+            try {
+                val saved = withContext(Dispatchers.IO) {
+                    val bytes = ByteArrayOutputStream().use { os ->
+                        // PNG 无损，画质不打折
+                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, os)
+                        os.toByteArray()
+                    }
+                    val name = uniqueRemoteFrameName(filename)
+                    session.writeFile(shareName, pathOf(name), bytes)
+                    name to bytes.size
+                }
+                val savedName = saved.first
+                // 同名字幕查找共用这份文件名集合，保存后同步一下，避免后续判断滞后
+                allFileNames = allFileNames + savedName
+                val msg = getString(R.string.keyframe_saved_folder, savedName)
+                showHint(msg)
+                toast(msg)
+                logInfo(
+                    "已导出帧到视频目录 ${if (directory.isEmpty()) "/" else directory}: " +
+                        "$savedName (${bitmap.width}x${bitmap.height} PNG, ${formatSize(saved.second.toLong())})"
+                )
+            } catch (e: CancellationException) {
+                throw e // 用户离开播放页：正常取消
+            } catch (e: Exception) {
+                logError("导出帧到视频目录失败: $filename", e)
+                val msg = getString(R.string.keyframe_save_failed, e.message ?: "未知错误")
+                showHint(msg)
+                toast(msg)
+            } finally {
+                binding.groupFrameSave.isEnabled = true
+                binding.groupFrameSave.alpha = 1f
+            }
+        }
+    }
+
+    /** 在远端目录里挑一个不重复的帧文件名：重名时在扩展名前加序号。阻塞，需在 IO 线程调用 */
+    private fun uniqueRemoteFrameName(filename: String): String {
+        if (!session.fileExists(shareName, pathOf(filename))) return filename
+        val dot = filename.lastIndexOf('.')
+        val stem = if (dot > 0) filename.substring(0, dot) else filename
+        val ext = if (dot > 0) filename.substring(dot) else ""
+        for (seq in 1..MAX_FRAME_SEQ) {
+            val candidate = "${stem}_$seq$ext"
+            if (!session.fileExists(shareName, pathOf(candidate))) return candidate
+        }
+        throw IOException("同名截图过多，请先清理该目录")
     }
 
     /**
@@ -1091,6 +1155,9 @@ class PlayerActivity : AppCompatActivity() {
 
         /** 导出帧文件名中视频名部分的最大长度 */
         private const val MAX_FILENAME_BASE = 60
+
+        /** 保存到视频文件夹时，同名文件最多往后找多少个序号 */
+        private const val MAX_FRAME_SEQ = 99
 
         /** 同名字幕整体读进内存的大小上限（超过就按无字幕播放，避免异常大文件） */
         private const val MAX_SUBTITLE_BYTES = 8L * 1024 * 1024

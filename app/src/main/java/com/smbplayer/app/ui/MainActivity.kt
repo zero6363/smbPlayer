@@ -58,7 +58,7 @@ class MainActivity : AppCompatActivity() {
         // 播放记录：顶部一行扁长方形卡片，左右滑动
         historyAdapter = HistoryAdapter(
             onClick = { openHistory(it) },
-            onLongClick = { confirmDeleteHistory(it) },
+            onLongClick = { showHistoryMenu(it) },
         )
         binding.recyclerHistory.layoutManager =
             LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
@@ -112,7 +112,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 首页播放记录：直接复用播放进度记录，按最近播放时间取前 N 条。
+     * 首页播放记录：直接复用播放进度记录，置顶的永久排最前，其余按最近播放时间取前 N 条。
+     * 「播放记录条数」只限制未置顶的卡片，置顶记录始终显示。
      * 服务器已被删除的记录进不去播放页，直接跳过（但保留数据，万一以后重新添加）。
      */
     private fun refreshHistory() {
@@ -137,11 +138,16 @@ class MainActivity : AppCompatActivity() {
                     },
                 )
             }
+            .toList()
+        val pinnedCards = cards.filter { it.record.pinned }
+        val recentCards = cards.asSequence()
+            .filterNot { it.record.pinned }
             .take(SettingsRepository.historyCount)
             .toList()
-        historyAdapter.submit(cards)
+        val shown = pinnedCards + recentCards
+        historyAdapter.submit(shown)
         binding.historySection.visibility =
-            if (cards.isEmpty()) View.GONE else View.VISIBLE
+            if (shown.isEmpty()) View.GONE else View.VISIBLE
     }
 
     /**
@@ -167,11 +173,53 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    /** 长按删除单条记录（同时清掉该视频的续播位置，二次确认避免误删） */
+    /** 长按播放记录：弹出菜单，可置顶 / 取消置顶或删除（删除前二次确认） */
+    private fun showHistoryMenu(record: PlaybackHistory) {
+        val actions = arrayOf(
+            getString(if (record.pinned) R.string.history_unpin else R.string.history_pin),
+            getString(R.string.history_delete_action),
+        )
+        MaterialAlertDialogBuilder(this)
+            .setTitle(record.name)
+            .setItems(actions) { _, which ->
+                when (which) {
+                    0 -> toggleHistoryPin(record)
+                    1 -> confirmDeleteHistory(record)
+                }
+            }
+            .setNegativeButton(R.string.server_cancel, null)
+            .show()
+    }
+
+    /** 置顶 / 取消置顶：置顶后永久排在首页最前，且不会被条数限制和自动淘汰清掉 */
+    private fun toggleHistoryPin(record: PlaybackHistory) {
+        val pinned = !record.pinned
+        PlaybackProgressRepository.setPinned(
+            serverId = record.serverId,
+            shareName = record.shareName,
+            path = record.path,
+            pinned = pinned,
+        )
+        refreshHistory()
+        toast(
+            getString(
+                if (pinned) R.string.history_pinned else R.string.history_unpinned,
+                record.name,
+            )
+        )
+    }
+
+    /** 删除单条记录（同时清掉该视频的续播位置与置顶标记，二次确认避免误删） */
     private fun confirmDeleteHistory(record: PlaybackHistory) {
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.history_delete_title)
-            .setMessage(getString(R.string.history_delete_message, record.name))
+            .setMessage(
+                if (record.pinned) {
+                    getString(R.string.history_delete_message_pinned, record.name)
+                } else {
+                    getString(R.string.history_delete_message, record.name)
+                }
+            )
             .setPositiveButton(R.string.delete_confirm) { _, _ ->
                 PlaybackProgressRepository.remove(record.serverId, record.shareName, record.path)
                 refreshHistory()

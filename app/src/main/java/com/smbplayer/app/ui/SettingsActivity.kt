@@ -18,7 +18,8 @@ import com.smbplayer.app.util.Changelog
 import com.smbplayer.app.util.toast
 
 /**
- * 设置页：首页播放记录（显示开关 / 显示条数）、后台播放开关、长按临时倍速、更新日志。
+ * 设置页：首页播放记录（显示开关 / 显示条数）、后台播放开关、导出帧保存位置、
+ * 长按临时倍速、更新日志。
  *
  * 原本主页菜单里的「长按倍速」与「更新日志」入口都整合到这里。
  */
@@ -52,6 +53,12 @@ class SettingsActivity : AppCompatActivity() {
         binding.swBackgroundPlay.isChecked = SettingsRepository.backgroundPlay
         binding.swBackgroundPlay.setOnCheckedChangeListener { _, isChecked ->
             SettingsRepository.backgroundPlay = isChecked
+        }
+
+        // 导出帧保存位置
+        binding.swFrameSaveToFolder.isChecked = SettingsRepository.frameSaveToVideoFolder
+        binding.swFrameSaveToFolder.setOnCheckedChangeListener { _, isChecked ->
+            SettingsRepository.frameSaveToVideoFolder = isChecked
         }
 
         // 长按临时倍速
