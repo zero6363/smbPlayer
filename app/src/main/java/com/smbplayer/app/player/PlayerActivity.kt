@@ -453,6 +453,23 @@ class PlayerActivity : AppCompatActivity() {
         return Uri.parse("smb://${server.host}/$shareName/$encodedPath")
     }
 
+    /**
+     * 顶部栏文字：标题恒为「当前播放的视频文件名」，副标题为「集数 / 总数 + 目录」。
+     *
+     * 全页只有这一处改标题，切集 / 删集 / 控制栏重新出现都会按 [videos] + [index] 重算，
+     * 保证标题永远跟着当前视频走（曾经出现过切集后标题停在上一集的情况）。
+     */
+    private fun updateHeader() {
+        val name = videos.getOrNull(index) ?: return
+        binding.tvTitle.text = name
+        binding.tvSubtitle.text = getString(
+            R.string.player_title_format,
+            index + 1,
+            videos.size,
+            if (directory.isEmpty()) "/" else directory
+        )
+    }
+
     private fun playAt(newIndex: Int, startPositionMs: Long? = null) {
         if (newIndex !in videos.indices) {
             logError("播放索引越界: $newIndex, 列表大小=${videos.size}")
@@ -476,13 +493,7 @@ class PlayerActivity : AppCompatActivity() {
         mainHandler.removeCallbacks(subtitleTickRunnable)
 
         // 先同步更新标题/进度等 UI；字幕的 SMB 读取放 IO 线程，避免卡主线程
-        binding.tvTitle.text = name
-        binding.tvSubtitle.text = getString(
-            R.string.player_title_format,
-            newIndex + 1,
-            videos.size,
-            if (directory.isEmpty()) "/" else directory
-        )
+        updateHeader()
         binding.tvError.visibility = View.GONE
         binding.progress.visibility = View.VISIBLE
         updateControls()
@@ -1078,6 +1089,9 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun showControls() {
+        // 控制栏每次出现都按当前视频重刷一次顶部标题：切集时控制栏多半是隐藏状态，
+        // 一露头就必须是对的视频名（也顺带修正任何漏更新，标题不会停在上一集）
+        updateHeader()
         animateBarIn(binding.topBar, -1)
         animateBarIn(binding.bottomBar, 1)
         setBottomMargin(binding.tvSubtitleOverlay, 148)

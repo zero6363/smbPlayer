@@ -17,6 +17,14 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.35",
+            date = "2026-11-16",
+            lines = listOf(
+                "修复播放页顶部标题切集后可能停在上一集：标题现在始终跟随当前视频，切集、删集或控制栏重新出现时都会按当前视频重新计算",
+                "跑马灯标题随内容更换从头滚动：同一部剧各集名称常常等宽，之前可能被误判为「没变化」而沿用上一条的滚动位置，看起来标题没跟着改",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.34",
             date = "2026-11-12",
             lines = listOf(

@@ -27,6 +27,9 @@ class MarqueeTextView @JvmOverloads constructor(
     /** 已设置的滚动距离；相同距离且动画仍在跑就不重启，避免反复 measure 打断滚动 */
     private var marqueeDistance = -1
 
+    /** 上一次设置的文本：文本换了必须从头滚，不能沿用上一条的滚动位置 */
+    private var lastText: String? = null
+
     /** 基础速度：约 60dp/秒 */
     private val baseSpeedPxPerMs: Float = 60f * resources.displayMetrics.density / 1000f
 
@@ -50,6 +53,15 @@ class MarqueeTextView @JvmOverloads constructor(
         lengthAfter: Int,
     ) {
         super.onTextChanged(text, start, lengthBefore, lengthAfter)
+        // 换了内容就从头部重新滚：同一部剧的剧集名常常等宽（滚动距离完全一样），
+        // 只按距离判断会被当成「没变化」，继续沿用上一条的偏移量，看起来就像标题没跟着改
+        val newText = text?.toString()
+        if (newText != lastText) {
+            lastText = newText
+            marqueeDistance = -1
+            stopMarquee()
+            scrollTo(0, 0)
+        }
         restartMarquee()
     }
 
