@@ -32,33 +32,125 @@
         android:focusable="true"
         android:orientation="vertical">
 
-        <!-- 顶部栏 -->
+        <!-- 顶部栏：第一行是返回 / 标题 / 操作按钮，第二行单独放分类按钮，不挤占标题 -->
         <LinearLayout
             android:id="@+id/top_bar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="@drawable/bg_scrim_top"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
+            android:orientation="vertical"
             android:paddingStart="4dp"
             android:paddingEnd="4dp"
             android:paddingTop="4dp"
-            android:paddingBottom="4dp">
+            android:paddingBottom="6dp">
 
-            <ImageButton
-                android:id="@+id/btn_back"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/back"
-                android:src="@drawable/ic_chevron_left"
-                app:tint="@color/player_control_text" />
+            <LinearLayout
+                android:id="@+id/top_bar_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/btn_back"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/back"
+                    android:src="@drawable/ic_chevron_left"
+                    app:tint="@color/player_control_text" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp">
+
+                    <com.smbplayer.app.widget.MarqueeTextView
+                        android:id="@+id/tv_title"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/player_control_text"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <com.smbplayer.app.widget.MarqueeTextView
+                        android:id="@+id/tv_subtitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/player_control_text"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/btn_speed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/bg_hint_pill"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:text="1.00x"
+                    android:textColor="@color/on_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tv_speed_hint"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:background="@color/player_speed_tint"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
+                    android:textColor="@color/on_primary"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <ImageButton
+                    android:id="@+id/btn_delete"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/player_delete_current"
+                    android:src="@drawable/ic_delete"
+                    app:tint="#FFFF8A80" />
+
+                <ImageButton
+                    android:id="@+id/btn_orientation"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/orientation_toggle"
+                    android:src="@drawable/ic_screen_rotation"
+                    app:tint="@color/player_control_text" />
+
+                <ImageButton
+                    android:id="@+id/btn_playlist"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/player_playlist"
+                    android:src="@drawable/ic_playlist_play"
+                    app:tint="@color/player_control_text" />
+            </LinearLayout>
 
             <!-- 分类归档：把当前视频移动到当前目录下的 1 / 2 / 3 文件夹（没有就新建），然后接着播下一个 -->
             <LinearLayout
                 android:id="@+id/group_move"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="44dp"
+                android:layout_marginTop="2dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
@@ -80,88 +172,6 @@
                     android:contentDescription="@string/player_move_to_3"
                     android:text="3" />
             </LinearLayout>
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:paddingStart="4dp"
-                android:paddingEnd="4dp">
-
-                <com.smbplayer.app.widget.MarqueeTextView
-                    android:id="@+id/tv_title"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/player_control_text"
-                    android:textSize="15sp"
-                    android:textStyle="bold" />
-
-                <com.smbplayer.app.widget.MarqueeTextView
-                    android:id="@+id/tv_subtitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/player_control_text"
-                    android:textSize="11sp" />
-            </LinearLayout>
-
-            <TextView
-                android:id="@+id/btn_speed"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:background="@drawable/bg_hint_pill"
-                android:clickable="true"
-                android:focusable="true"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:paddingTop="4dp"
-                android:paddingBottom="4dp"
-                android:text="1.00x"
-                android:textColor="@color/on_primary"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/tv_speed_hint"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:background="@color/player_speed_tint"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp"
-                android:paddingTop="2dp"
-                android:paddingBottom="2dp"
-                android:textColor="@color/on_primary"
-                android:textSize="12sp"
-                android:textStyle="bold"
-                android:visibility="gone" />
-
-            <ImageButton
-                android:id="@+id/btn_delete"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/player_delete_current"
-                android:src="@drawable/ic_delete"
-                app:tint="#FFFF8A80" />
-
-            <ImageButton
-                android:id="@+id/btn_orientation"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/orientation_toggle"
-                android:src="@drawable/ic_screen_rotation"
-                app:tint="@color/player_control_text" />
-
-            <ImageButton
-                android:id="@+id/btn_playlist"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/player_playlist"
-                android:src="@drawable/ic_playlist_play"
-                app:tint="@color/player_control_text" />
         </LinearLayout>
 
         <!-- 中间空白：点击隐藏/显示控制条 -->

@@ -17,6 +17,14 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.37",
+            date = "2026-11-18",
+            lines = listOf(
+                "播放页「1 / 2 / 3」分类按钮挪到标题下方、单独占一行（左边缘与标题对齐）：标题行不再被挤占，长剧名照旧完整跑马灯",
+                "按钮顺带放大到 30dp、间距 6dp，点按更稳",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.36",
             date = "2026-11-18",
             lines = listOf(

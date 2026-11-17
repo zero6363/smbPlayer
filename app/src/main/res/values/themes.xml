@@ -21,9 +21,9 @@
 
     <!-- 播放页左上角分类按钮（1 / 2 / 3）：小圆角胶囊，点一下归档并切下一个 -->
     <style name="PlayerMoveButton" parent="">
-        <item name="android:layout_width">28dp</item>
-        <item name="android:layout_height">28dp</item>
-        <item name="android:layout_marginEnd">4dp</item>
+        <item name="android:layout_width">30dp</item>
+        <item name="android:layout_height">30dp</item>
+        <item name="android:layout_marginEnd">6dp</item>
         <item name="android:background">@drawable/bg_hint_pill</item>
         <item name="android:clickable">true</item>
         <item name="android:focusable">true</item>
