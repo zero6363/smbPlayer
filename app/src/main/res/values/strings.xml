@@ -71,6 +71,13 @@
     <string name="btn_ffwd">前进 5 秒</string>
     <string name="btn_play_pause">播放 / 暂停</string>
     <string name="player_delete_current">删除当前视频</string>
+    <string name="player_move_to_1">移动到文件夹 1</string>
+    <string name="player_move_to_2">移动到文件夹 2</string>
+    <string name="player_move_to_3">移动到文件夹 3</string>
+    <string name="player_moved">已移动到「%1$s」：%2$s</string>
+    <string name="player_moved_last">已移动到「%1$s」，没有下一个视频了</string>
+    <string name="player_already_in_folder">已经在「%1$s」文件夹里了</string>
+    <string name="player_move_failed">移动失败：%1$s</string>
     <string name="player_next">下一个</string>
     <string name="player_prev">上一个</string>
     <string name="player_playlist">播放列表</string>

@@ -17,6 +17,15 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.36",
+            date = "2026-11-18",
+            lines = listOf(
+                "播放页顶部左上角新增「1 / 2 / 3」三个分类按钮：点一下即把当前视频移动到当前目录下的 1、2、3 文件夹（不存在时自动新建），随后接着播原播放顺序的下一个视频",
+                "移动走服务端改名，不复制数据，几个 G 的视频也是瞬间完成；目标文件夹里已有同名文件时自动加序号（如 xxx_1.mkv），不会覆盖",
+                "播放进度跟着文件搬家：新路径沿用当前位置续播，旧路径记录自动清掉；被移动的是最后一个视频时提示后关闭播放页",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.35",
             date = "2026-11-16",
             lines = listOf(

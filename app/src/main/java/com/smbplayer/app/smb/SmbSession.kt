@@ -263,6 +263,123 @@ class SmbSession(private val server: SmbServer) : Closeable {
         )
 
     /**
+     * 把文件 [from] 移动到同一共享内的 [to]（换目录 / 改名），返回实际目标路径。阻塞。
+     *
+     * - 目标目录不存在时自动逐级新建（播放页「1 / 2 / 3」分类文件夹就靠这个）；
+     * - 目标已有同名文件时不覆盖，自动在扩展名前加序号（`xxx_1.mkv`）；
+     * - 走 SMB2 rename（服务端改名），不搬数据，几个 G 的视频也是瞬间完成；
+     * - 文件正被播放器占用时按占用重试，等句柄释放后再改名。
+     */
+    fun moveFile(shareName: String, from: String, to: String): String = withRetry(shareName) { sh ->
+        val share = sh ?: throw IOException("未连接到共享「$shareName」")
+        ensureFolders(share, parentPath(to))
+        val target = uniquePath(share, to)
+        moveEntry(share, from, target)
+        logInfo("移动文件: $from -> $target")
+        target
+    }
+
+    /** 逐级确保目录存在（[dir] 为空表示共享根，无需处理）。 */
+    private fun ensureFolders(share: DiskShare, dir: String) {
+        if (dir.isEmpty()) return
+        if (share.folderExists(dir)) return
+        var current = ""
+        for (segment in dir.split('/')) {
+            if (segment.isEmpty()) continue
+            current = if (current.isEmpty()) segment else "$current/$segment"
+            if (share.folderExists(current)) continue
+            try {
+                share.mkdir(current)
+                logInfo("新建文件夹: $current")
+            } catch (e: SMBApiException) {
+                // 并发/别的客户端刚好建好：视为已存在，继续下一级
+                if (e.status == NtStatus.STATUS_OBJECT_NAME_COLLISION) continue
+                throw IOException("新建文件夹失败：$current（${moveStatusHint(e.status)}）", e)
+            }
+        }
+    }
+
+    /** 目标已有同名文件时挑一个不重复的路径（`xxx_1.mkv`），避免覆盖 */
+    private fun uniquePath(share: DiskShare, path: String): String {
+        if (!share.fileExists(path)) return path
+        val dir = parentPath(path)
+        val name = path.substringAfterLast('/')
+        val dot = name.lastIndexOf('.')
+        val stem = if (dot > 0) name.substring(0, dot) else name
+        val ext = if (dot > 0) name.substring(dot) else ""
+        for (seq in 1..MAX_MOVE_SEQ) {
+            val candidate = if (dir.isEmpty()) "${stem}_$seq$ext" else "$dir/${stem}_$seq$ext"
+            if (!share.fileExists(candidate)) return candidate
+        }
+        throw IOException("目标文件夹里同名文件太多，请先整理：$path")
+    }
+
+    /**
+     * 改名（= 移动）一个条目。
+     *
+     * 与删除同理：SMB2 改名需要 DELETE 权限，部分设备只认更宽松的访问掩码，
+     * 逐级放宽重试；被占用（STATUS_SHARING_VIOLATION）时整轮等待重来。
+     */
+    private fun moveEntry(share: DiskShare, from: String, to: String) {
+        var last: SMBApiException? = null
+        for (round in 0 until SHARING_RETRY_ROUNDS) {
+            var sharingViolation = false
+            for (mask in DELETE_ACCESS_MASKS) {
+                try {
+                    share.openFile(
+                        from,
+                        mask,
+                        EnumSet.of(FileAttributes.FILE_ATTRIBUTE_NORMAL),
+                        EnumSet.allOf(SMB2ShareAccess::class.java),
+                        SMB2CreateDisposition.FILE_OPEN,
+                        EnumSet.of(SMB2CreateOptions.FILE_NON_DIRECTORY_FILE),
+                    ).use { entry ->
+                        // SMB2 的 FileRenameInformation 用反斜杠分隔、相对共享根的路径
+                        try {
+                            entry.rename(to.replace('/', '\\'), false)
+                        } catch (e: SMBApiException) {
+                            // 少数 Samba / 路由器共享只认正斜杠：按原路径再试一次
+                            if (!to.contains('/') || !isNameError(e)) throw e
+                            logInfo("反斜杠改名被拒(${e.status.name})，改用正斜杠重试: $to")
+                            entry.rename(to, false)
+                        }
+                    }
+                    return
+                } catch (e: SMBApiException) {
+                    last = e
+                    if (e.status == NtStatus.STATUS_SHARING_VIOLATION) {
+                        sharingViolation = true
+                        break
+                    }
+                    if (e.status != NtStatus.STATUS_ACCESS_DENIED) throw moveFailed(from, e)
+                    logInfo("改名被拒绝(${e.status.name})，换更宽松的权限重试: $from")
+                }
+            }
+            if (!sharingViolation) break
+            logInfo("改名被占用，稍后重试(${round + 1}/$SHARING_RETRY_ROUNDS): $from")
+            if (round < SHARING_RETRY_ROUNDS - 1) Thread.sleep(SHARING_RETRY_DELAY_MS)
+        }
+        val error = last
+        throw if (error != null) moveFailed(from, error) else IOException("移动失败：$from")
+    }
+
+    /** 移动/新建目录失败时翻译成用户看得懂的原因 */
+    private fun moveStatusHint(status: NtStatus): String = when (status) {
+        NtStatus.STATUS_ACCESS_DENIED -> "没有移动或新建文件夹的权限"
+        NtStatus.STATUS_SHARING_VIOLATION -> "文件正被占用（比如还在播放）"
+        NtStatus.STATUS_OBJECT_NAME_COLLISION -> "目标位置已有同名文件"
+        NtStatus.STATUS_OBJECT_NAME_NOT_FOUND -> "文件不存在（可能已被移动或删除）"
+        NtStatus.STATUS_OBJECT_PATH_NOT_FOUND -> "路径不存在（可能已被移动或删除）"
+        NtStatus.STATUS_NO_SUCH_FILE -> "文件不存在（可能已被移动或删除）"
+        NtStatus.STATUS_NOT_A_DIRECTORY -> "中间路径不是文件夹"
+        NtStatus.STATUS_FILE_IS_A_DIRECTORY -> "目标是文件夹，不能按文件移动"
+        else -> status.name
+    }
+
+    private fun moveFailed(path: String, e: SMBApiException): IOException =
+        IOException("$path：${moveStatusHint(e.status)}（${e.status.name}）", e)
+
+    /**
      * 删除文件或目录（目录递归删除）。阻塞。
      *
      * 兜底顺序：
@@ -598,6 +715,9 @@ class SmbSession(private val server: SmbServer) : Closeable {
          */
         private const val SHARING_RETRY_ROUNDS = 6
         private const val SHARING_RETRY_DELAY_MS = 400L
+
+        /** 移动时目标重名，最多往后找多少个序号 */
+        private const val MAX_MOVE_SEQ = 99
 
         /**
          * 写入文件的访问掩码阶梯：从标准写权限逐级放宽。

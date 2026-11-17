@@ -67,7 +67,8 @@ import java.io.IOException
 /**
  * 播放页：播放 [directory] 目录下的所有视频。
  *
- * 支持删除当前视频（删除后自动跳到下一个）、上一个/下一个、播放列表。
+ * 支持删除当前视频（删除后自动跳到下一个）、分类归档（移动到 1 / 2 / 3 文件夹后接着播下一个）、
+ * 上一个/下一个、播放列表。
  */
 @OptIn(markerClass = [UnstableApi::class])
 class PlayerActivity : AppCompatActivity() {
@@ -115,6 +116,9 @@ class PlayerActivity : AppCompatActivity() {
     private var player: ExoPlayer? = null
     private var userSeeking = false
     private var playlistDialog: android.app.Dialog? = null
+
+    /** 正在把当前视频移到分类文件夹：期间按钮置灰，避免连点重复移动 */
+    private var moveInProgress = false
 
     /** 播放页常驻倍速（区别于长按临时倍速），取自设置，切到下一集时继承 */
     private var normalSpeed = SettingsRepository.normalSpeed
@@ -380,6 +384,75 @@ class PlayerActivity : AppCompatActivity() {
                 toast(getString(R.string.player_delete_failed, e.message ?: e.toString()))
                 // 删除失败，从原位置继续播放
                 playAt(index, startPositionMs = resumePosition)
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ 分类归档（1 / 2 / 3）
+
+    /**
+     * 把当前视频归档到当前目录下的 [folder]（1 / 2 / 3）：文件夹不存在就在服务端新建，
+     * 移动完成后按**原有播放顺序**接着播下一个视频。
+     *
+     * 移动是服务端 rename，不搬数据（几个 G 也是瞬间完成）。先停播释放 SMB 读句柄，
+     * 否则服务端会以「文件被占用」拒绝改名；占用重试在 [SmbSession.moveFile] 里。
+     */
+    private fun moveCurrentTo(folder: String) {
+        if (moveInProgress) return
+        val name = videos.getOrNull(index) ?: return
+        // 已经在同名文件夹里（比如在「1」里又点 1）：不建 1/1，也不切集
+        if (directory.trim('/').substringAfterLast('/') == folder) {
+            showHint(getString(R.string.player_already_in_folder, folder))
+            return
+        }
+        val srcPath = pathOf(name)
+        val destDir = joinPath(directory, folder)
+        val p = player
+        // 停播前先取位置：播放记录要跟着文件一起搬到新路径
+        val position = p?.currentPosition ?: 0L
+        val duration = p?.duration ?: 0L
+
+        moveInProgress = true
+        updateControls()
+        p?.stop()
+        // 当前播放路径作废，避免 playAt 里的强制落盘把旧路径又写回记录
+        currentVideoPath = null
+
+        lifecycleScope.launch {
+            try {
+                val movedPath = withContext(Dispatchers.IO) {
+                    session.moveFile(shareName, srcPath, joinPath(destDir, name))
+                }
+                logInfo("已归档到「$folder」: $name -> $movedPath")
+
+                // 播放记录跟着文件搬家：旧路径的记录作废，新路径沿用当前位置
+                PlaybackProgressRepository.remove(server.id, shareName, srcPath)
+                if (duration > 0L && position > 0L) {
+                    PlaybackProgressRepository.save(server.id, shareName, movedPath, position, duration)
+                }
+                allFileNames = allFileNames - name
+
+                // 从播放列表里摘掉当前视频：后一个自动顶到同一位置，顺序不变
+                val removedAt = videos.indexOf(name)
+                if (removedAt >= 0) videos.removeAt(removedAt)
+                if (videos.isEmpty() || removedAt < 0 || removedAt > videos.lastIndex) {
+                    // 刚移动的就是最后一个：没有下一个可播
+                    toast(getString(R.string.player_moved_last, folder))
+                    finish()
+                    return@launch
+                }
+                toast(getString(R.string.player_moved, folder, name))
+                playAt(removedAt)
+            } catch (e: CancellationException) {
+                throw e // 用户离开播放页：正常取消
+            } catch (e: Exception) {
+                logError("移动到「$folder」失败: $srcPath", e)
+                toast(getString(R.string.player_move_failed, e.message ?: e.toString()))
+                // 移动失败：从原位置继续播当前视频
+                playAt(index, startPositionMs = position)
+            } finally {
+                moveInProgress = false
+                if (!isFinishing) updateControls()
             }
         }
     }
@@ -668,6 +741,12 @@ class PlayerActivity : AppCompatActivity() {
         binding.btnNextVideo.setOnClickListener { playNext(fromUser = true) }
         binding.btnPlaylist.setOnClickListener { showPlaylist() }
         binding.btnDelete.setOnClickListener { confirmDeleteCurrent() }
+
+        // 分类归档：把当前视频移到当前目录下的 1 / 2 / 3 文件夹（没有就新建）
+        binding.btnMove1.setOnClickListener { moveCurrentTo("1") }
+        binding.btnMove2.setOnClickListener { moveCurrentTo("2") }
+        binding.btnMove3.setOnClickListener { moveCurrentTo("3") }
+
         binding.btnOrientation.setOnClickListener { toggleOrientation() }
 
         // 播放页常驻倍速：单独设置，区别于长按临时倍速；设置后会继承到下一集
@@ -1072,6 +1151,14 @@ class PlayerActivity : AppCompatActivity() {
         binding.btnNextVideo.alpha = if (hasNext) 1f else 0.35f
 
         binding.btnPlaylist.isEnabled = videos.isNotEmpty()
+
+        // 归档按钮：有视频且不在移动过程中才可点
+        val canMove = videos.isNotEmpty() && !moveInProgress
+        val moveButtons = arrayOf(binding.btnMove1, binding.btnMove2, binding.btnMove3)
+        for (btn in moveButtons) {
+            btn.isEnabled = canMove
+            btn.alpha = if (canMove) 1f else 0.35f
+        }
 
         updateProgress()
     }
