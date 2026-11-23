@@ -413,6 +413,65 @@
         </LinearLayout>
     </LinearLayout>
 
+    <!-- 居中手势反馈：进度预览、亮度和音量共用，不拦截触摸事件 -->
+    <LinearLayout
+        android:id="@+id/gesture_feedback"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_hint_pill"
+        android:clickable="false"
+        android:focusable="false"
+        android:gravity="center"
+        android:minWidth="220dp"
+        android:orientation="vertical"
+        android:paddingStart="22dp"
+        android:paddingEnd="22dp"
+        android:paddingTop="18dp"
+        android:paddingBottom="18dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/iv_gesture_icon"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:importantForAccessibility="no"
+            app:tint="@color/player_control_text" />
+
+        <TextView
+            android:id="@+id/tv_gesture_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:textColor="@color/player_control_text"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tv_gesture_detail"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:gravity="center"
+            android:textColor="@color/player_control_text_dim"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <ProgressBar
+            android:id="@+id/gesture_progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="180dp"
+            android:layout_height="6dp"
+            android:layout_marginTop="12dp"
+            android:max="1000"
+            android:maxHeight="6dp"
+            android:minHeight="6dp"
+            android:progress="0"
+            android:progressBackgroundTint="@color/player_seek_buffered"
+            android:progressTint="@color/player_seek_played" />
+    </LinearLayout>
+
     <!-- 按钮操作提示：放底部居中，避免挡住画面（控制条隐藏时下移） -->
     <TextView
         android:id="@+id/tv_hint"

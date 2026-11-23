@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -12,9 +13,11 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.provider.Settings
 import android.view.GestureDetector
 import android.view.LayoutInflater
 import android.view.MotionEvent
+import android.view.Surface
 import android.view.TextureView
 import android.view.View
 import android.view.WindowManager
@@ -23,6 +26,8 @@ import android.widget.SeekBar
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -57,6 +62,7 @@ import com.smbplayer.app.util.logInfo
 import com.smbplayer.app.util.sanitizeFileName
 import com.smbplayer.app.util.toast
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -124,24 +130,34 @@ class PlayerActivity : AppCompatActivity() {
     private var normalSpeed = SettingsRepository.normalSpeed
     private var isLongPressBoost = false
 
+    /** 播放页手势：横滑进度，左侧纵滑亮度，右侧纵滑音量。 */
+    private enum class GestureMode { NONE, SEEK, BRIGHTNESS, VOLUME }
+
+    private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+
     /**
-     * 滑动调进度：非线性映射——滑得越远，每像素对应的秒数越多
-     * （基础速率 + 距离平方加速项），目标始终以按下点为基准计算，
-     * 不用逐次增量累加——网络流 seek 后 currentPosition 有延迟，
-     * 增量法会把延迟算进去，快速滑动时进度越漂越偏。
+     * 滑动调进度采用非线性映射，目标始终以按下点为基准计算。
+     * 拖动过程中只预览进度，松手后才执行一次 seek，避免 SMB 网络流被连续定位请求拖慢。
      */
+    private var gestureMode = GestureMode.NONE
     private var swipeStartX = 0f
     private var swipeStartY = 0f
     private var swipeStartPosition = 0L
-    private var isSwiping = false
+    private var swipeTargetPosition = 0L
+    private var swipeStartBrightness = 0.5f
+    private var swipeStartVolume = 0
 
-    /** 滑动激活的最小水平位移（24dp 换算成 px），且要求水平位移大于竖直位移 */
+    /** 一次触摸发生过拖动或长按后，不再触发单击控制条。 */
+    private var suppressTap = false
+
+    /** 手势激活的最小位移，且主轴位移必须大于另一轴。 */
     private val swipeActivateDistancePx by lazy { 24f * resources.displayMetrics.density }
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /** 居中提示自动隐藏 */
+    /** 底部操作提示与居中手势反馈自动隐藏。 */
     private val hideHintRunnable = Runnable { binding.tvHint.visibility = View.GONE }
+    private val hideGestureFeedbackRunnable = Runnable { binding.gestureFeedback.visibility = View.GONE }
 
     /** 底部显示一条操作提示（不挡画面），稍后自动隐藏 */
     private fun showHint(text: String) {
@@ -155,15 +171,16 @@ class PlayerActivity : AppCompatActivity() {
         override fun run() {
             // 播放中每 5 秒落一次播放记录（saveCurrentProgress 内部节流）
             saveCurrentProgress()
-            // 滑动调进度期间不自动刷新：seek 后的实际位置有延迟，
-            // tick 会把进度条拉回旧位置，和滑动目标互相覆盖造成抖动
-            if (!isSwiping) updateProgress()
+            // 横滑调进度期间不自动刷新：实际位置尚未改变，避免覆盖手势预览目标。
+            if (gestureMode != GestureMode.SEEK) updateProgress()
             mainHandler.postDelayed(this, TICK_INTERVAL_MS)
         }
     }
 
     private val hideControlsRunnable = Runnable {
-        if (player?.isPlaying == true && !userSeeking && !isSwiping && !isFinishing) hideControls()
+        if (player?.isPlaying == true && !userSeeking && gestureMode == GestureMode.NONE && !isFinishing) {
+            hideControls()
+        }
     }
 
     private val playerListener = object : Player.Listener {
@@ -192,79 +209,36 @@ class PlayerActivity : AppCompatActivity() {
 
     // 必须 lazy：GestureDetector 构造时会走 context.getResources()，
     // 而字段初始化器在 Activity 构造函数中执行，早于 attach()，mBase 还是 null，会直接 NPE。
-    private val gestureDetector by lazy { GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-        override fun onLongPress(e: MotionEvent) {
-            startSpeedBoost()
-        }
-
-        override fun onScroll(
-            e1: MotionEvent?,
-            e2: MotionEvent,
-            distanceX: Float,
-            distanceY: Float,
-        ): Boolean {
-            if (!isSwiping) return false
-            val p = player ?: return false
-            val duration = p.duration
-            // 非线性映射：目标 = 按下时的进度 + f(水平位移)。
-            // f = 基础速率×距离 + 加速系数×距离²/2，滑得越远每像素跳转越多；
-            // 右滑快进、左滑快退，全程只以按下点为基准，不逐次累加
-            val dx = e2.x - swipeStartX
-            val dist = abs(dx)
-            val screenW = resources.displayMetrics.widthPixels.toFloat().coerceAtLeast(1f)
-            val baseRate: Float
-            val accel: Float
-            if (duration > 0) {
-                // 滑满一屏 ≈ 跳 1/10 时长，加速项再补 1/20；视频越长单位距离跳得越多
-                baseRate = duration / (screenW * 10f)
-                accel = duration / (screenW * screenW * 10f)
-            } else {
-                // 时长未知（直播等）：固定基础速率 60ms/px
-                baseRate = 60f
-                accel = 0.01f
+    private val gestureDetector by lazy {
+        GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onLongPress(e: MotionEvent) {
+                if (gestureMode == GestureMode.NONE) startSpeedBoost()
             }
-            val offsetMs = (baseRate * dist + accel * dist * dist / 2f) * if (dx >= 0) 1f else -1f
-            val target = swipeStartPosition + offsetMs.toLong()
-            val clamped = if (duration > 0) target.coerceIn(0L, duration) else target.coerceAtLeast(0L)
-            userAdjustedPosition = true
-            p.seekTo(clamped)
-            updateProgress()
-            // 滑动过程中实时提示滑到了几分几秒、相对按下点偏移多少
-            val sign = if (clamped >= swipeStartPosition) "+" else "-"
-            val diffSec = (abs(clamped - swipeStartPosition) / 1000)
-            showHint(
-                getString(
-                    R.string.hint_swipe_seek,
-                    formatDuration(clamped),
-                    "$sign${diffSec}s"
-                )
-            )
-            return true
-        }
 
-        override fun onDoubleTap(e: MotionEvent): Boolean {
-            // 双击播放 / 暂停
-            if (isSwiping) return false
-            togglePlayPause()
-            return true
-        }
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                if (gestureMode != GestureMode.NONE || isLongPressBoost) return false
+                val width = binding.tapArea.width.toFloat().takeIf { it > 0f }
+                    ?: resources.displayMetrics.widthPixels.toFloat()
+                when {
+                    e.x < width * DOUBLE_TAP_SIDE_FRACTION -> {
+                        seekBy(-DOUBLE_TAP_SEEK_MS, fromGesture = true)
+                    }
+                    e.x > width * (1f - DOUBLE_TAP_SIDE_FRACTION) -> {
+                        seekBy(DOUBLE_TAP_SEEK_MS, fromGesture = true)
+                    }
+                    else -> togglePlayPause()
+                }
+                return true
+            }
 
-        override fun onSingleTapUp(e: MotionEvent): Boolean {
-            // 单击切换控制条显示/隐藏（长按倍速、滑动进度不触发）
-            if (isLongPressBoost || isSwiping) return false
-            if (binding.topBar.visibility == View.VISIBLE) hideControls() else showControls()
-            return true
-        }
-
-        override fun onFling(
-            e1: MotionEvent?,
-            e2: MotionEvent,
-            velocityX: Float,
-            velocityY: Float,
-        ): Boolean {
-            return false
-        }
-    }) }
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                // 等双击判定结束再切换控制条，避免双击时控制条先闪一下。
+                if (suppressTap || gestureMode != GestureMode.NONE || isLongPressBoost) return false
+                if (binding.topBar.visibility == View.VISIBLE) hideControls() else showControls()
+                return true
+            }
+        })
+    }
 
     // ------------------------------------------------------------------ 生命周期
 
@@ -273,6 +247,7 @@ class PlayerActivity : AppCompatActivity() {
         logInfo("PlayerActivity onCreate")
         binding = ActivityPlayerBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        volumeControlStream = AudioManager.STREAM_MUSIC
 
         setupPlayer()
         setupControls()
@@ -325,6 +300,9 @@ class PlayerActivity : AppCompatActivity() {
         if (!SettingsRepository.backgroundPlay) {
             player?.pause()
         }
+        if (isLongPressBoost) stopSpeedBoost()
+        finishGesture(cancelled = true)
+        binding.gestureFeedback.visibility = View.GONE
         mainHandler.removeCallbacks(tickRunnable)
         mainHandler.removeCallbacks(hideControlsRunnable)
         mainHandler.removeCallbacks(subtitleTickRunnable)
@@ -598,7 +576,11 @@ class PlayerActivity : AppCompatActivity() {
 
                 val smbUri = displayUri(name)
                 val factory = SmbDataSource.Factory(session, shareName, pathOf(name), smbUri)
-                val videoSource = ProgressiveMediaSource.Factory(factory, DefaultExtractorsFactory())
+                // TS/M2TS/MTS 的 SPS 常缺色彩范围标注，按 full range 渲染会发灰，
+                // 用带兜底的 extractor 工厂补 limited；其它容器用默认工厂。
+                val isTs = VideoFormats.extOf(name) in setOf("ts", "m2ts", "mts")
+                val extractorsFactory = if (isTs) TsColorAwareExtractorsFactory() else DefaultExtractorsFactory()
+                val videoSource = ProgressiveMediaSource.Factory(factory, extractorsFactory)
                     .createMediaSource(MediaItem.fromUri(smbUri))
 
                 // 期间用户可能又切了别的视频：被取代的这次不再动手
@@ -726,7 +708,15 @@ class PlayerActivity : AppCompatActivity() {
     // ------------------------------------------------------------------ 播放控制
 
     private fun setupPlayer() {
-        val p = ExoPlayer.Builder(this).build()
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+            .build()
+        val p = ExoPlayer.Builder(this)
+            // 来电或其它应用抢音频时让出焦点，耳机拔出时自动暂停。
+            .setAudioAttributes(audioAttributes, true)
+            .setHandleAudioBecomingNoisy(true)
+            .build()
         p.addListener(playerListener)
         binding.playerView.player = p
         player = p
@@ -747,7 +737,7 @@ class PlayerActivity : AppCompatActivity() {
         binding.btnMove2.setOnClickListener { moveCurrentTo("2") }
         binding.btnMove3.setOnClickListener { moveCurrentTo("3") }
 
-        binding.btnOrientation.setOnClickListener { toggleOrientation() }
+        binding.btnOrientation.setOnClickListener { rotateScreen() }
 
         // 播放页常驻倍速：单独设置，区别于长按临时倍速；设置后会继承到下一集
         binding.btnSpeed.setOnClickListener { showNormalSpeedDialog() }
@@ -758,34 +748,28 @@ class PlayerActivity : AppCompatActivity() {
         binding.groupFrameNext.setOnClickListener { stepFrame(1) }
         binding.groupFrameSave.setOnClickListener { saveCurrentFrame() }
 
-        // 手势检测：长按倍速 + 滑动调进度
+        // 单击 / 双击 / 长按由 GestureDetector 识别，连续位移在这里统一处理。
         binding.tapArea.setOnTouchListener { _, event ->
-            gestureDetector.onTouchEvent(event)
-            when (event.action) {
+            when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    gestureMode = GestureMode.NONE
+                    suppressTap = false
                     swipeStartX = event.x
                     swipeStartY = event.y
                     swipeStartPosition = player?.currentPosition ?: 0L
-                    isSwiping = false
+                    swipeTargetPosition = swipeStartPosition
+                    swipeStartBrightness = currentWindowBrightness()
+                    swipeStartVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    mainHandler.removeCallbacks(hideGestureFeedbackRunnable)
+                    binding.gestureFeedback.visibility = View.GONE
                 }
-                MotionEvent.ACTION_MOVE -> {
-                    if (!isSwiping) {
-                        val dx = abs(event.x - swipeStartX)
-                        val dy = abs(event.y - swipeStartY)
-                        // 水平位移超过阈值且明显大于竖直位移，才认定为滑动调进度，
-                        // 避免竖直拖动（或斜着碰一下）误触发
-                        if (dx > swipeActivateDistancePx && dx > dy) {
-                            isSwiping = true
-                        }
-                    }
-                }
+                MotionEvent.ACTION_MOVE -> updateGesture(event)
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    if (isLongPressBoost) {
-                        stopSpeedBoost()
-                    }
-                    isSwiping = false
+                    if (isLongPressBoost) stopSpeedBoost()
+                    finishGesture(cancelled = event.actionMasked == MotionEvent.ACTION_CANCEL)
                 }
             }
+            gestureDetector.onTouchEvent(event)
             true
         }
 
@@ -815,12 +799,175 @@ class PlayerActivity : AppCompatActivity() {
         })
     }
 
+    // ------------------------------------------------------------------ 滑动手势
+
+    /** 根据主轴激活手势，后续移动只更新预览，不再重复判定方向。 */
+    private fun updateGesture(event: MotionEvent) {
+        val dx = event.x - swipeStartX
+        val dy = event.y - swipeStartY
+        if (gestureMode == GestureMode.NONE) {
+            val absX = abs(dx)
+            val absY = abs(dy)
+            if (absX <= swipeActivateDistancePx && absY <= swipeActivateDistancePx) return
+            gestureMode = when {
+                absX > swipeActivateDistancePx && absX > absY -> GestureMode.SEEK
+                absY > swipeActivateDistancePx && absY > absX -> {
+                    val width = binding.tapArea.width.toFloat().takeIf { it > 0f }
+                        ?: resources.displayMetrics.widthPixels.toFloat()
+                    if (swipeStartX < width / 2f) GestureMode.BRIGHTNESS else GestureMode.VOLUME
+                }
+                else -> return
+            }
+            suppressTap = true
+            if (isLongPressBoost) stopSpeedBoost()
+            // 手势期间保持控制栏几何尺寸不变，避免动画改变 tapArea 高度导致纵向位移跳变。
+            mainHandler.removeCallbacks(hideControlsRunnable)
+        }
+
+        when (gestureMode) {
+            GestureMode.SEEK -> updateSeekGesture(event)
+            GestureMode.BRIGHTNESS, GestureMode.VOLUME -> updateLevelGesture(event)
+            GestureMode.NONE -> Unit
+        }
+    }
+
+    /** 横滑仅计算并展示目标位置，真正的 seek 在 [finishGesture] 中执行一次。 */
+    private fun updateSeekGesture(event: MotionEvent) {
+        val p = player ?: return
+        val duration = p.duration
+        val dx = event.x - swipeStartX
+        val dist = abs(dx)
+        val width = binding.tapArea.width.toFloat().coerceAtLeast(1f)
+        val baseRate: Float
+        val accel: Float
+        if (duration > 0L) {
+            // 滑满一屏约跳转 1/10 时长，加速项再补 1/20，长视频也能快速定位。
+            baseRate = duration / (width * 10f)
+            accel = duration / (width * width * 10f)
+        } else {
+            baseRate = 60f
+            accel = 0.01f
+        }
+        val offsetMs = (baseRate * dist + accel * dist * dist / 2f) * if (dx >= 0f) 1f else -1f
+        val target = swipeStartPosition + offsetMs.toLong()
+        swipeTargetPosition = if (duration > 0L) {
+            target.coerceIn(0L, duration)
+        } else {
+            target.coerceAtLeast(0L)
+        }
+        previewSeekProgress(swipeTargetPosition, duration)
+        showSeekGesture(swipeTargetPosition, swipeTargetPosition - swipeStartPosition, duration)
+    }
+
+    /** 左半屏调整当前 Activity 亮度，右半屏调整媒体音量；均不修改系统持久设置。 */
+    private fun updateLevelGesture(event: MotionEvent) {
+        val height = binding.tapArea.height.toFloat().coerceAtLeast(1f)
+        val delta = (swipeStartY - event.y) / height
+        if (gestureMode == GestureMode.BRIGHTNESS) {
+            val brightness = (swipeStartBrightness + delta).coerceIn(MIN_BRIGHTNESS, 1f)
+            val attributes = window.attributes
+            attributes.screenBrightness = brightness
+            window.attributes = attributes
+            showLevelGesture(GestureMode.BRIGHTNESS, brightness)
+        } else if (gestureMode == GestureMode.VOLUME) {
+            val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+            val volume = (swipeStartVolume + delta * maxVolume).roundToInt().coerceIn(0, maxVolume)
+            if (volume != audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) {
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, volume, 0)
+            }
+            showLevelGesture(GestureMode.VOLUME, volume.toFloat() / maxVolume)
+        }
+    }
+
+    /** 松手后一次性提交横滑目标；系统取消触摸时不改变播放位置。 */
+    private fun finishGesture(cancelled: Boolean) {
+        val finishedMode = gestureMode
+        if (finishedMode == GestureMode.SEEK) {
+            val p = player
+            if (!cancelled && p != null && swipeTargetPosition != p.currentPosition) {
+                userAdjustedPosition = true
+                p.seekTo(swipeTargetPosition)
+            }
+            updateProgress()
+        }
+        gestureMode = GestureMode.NONE
+        if (finishedMode != GestureMode.NONE) {
+            scheduleGestureFeedbackHide()
+            scheduleHideControls()
+        }
+    }
+
+    private fun currentWindowBrightness(): Float {
+        val windowBrightness = window.attributes.screenBrightness
+        if (windowBrightness >= 0f) return windowBrightness
+        return runCatching {
+            Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f
+        }.getOrDefault(0.5f).coerceIn(MIN_BRIGHTNESS, 1f)
+    }
+
+    private fun previewSeekProgress(position: Long, duration: Long) {
+        binding.tvPosition.text = formatDuration(position)
+        if (duration > 0L) {
+            binding.tvDuration.text = formatDuration(duration)
+            binding.seekProgress.progress = (position * 1000 / duration).toInt().coerceIn(0, 1000)
+        }
+    }
+
+    private fun showSeekGesture(position: Long, deltaMs: Long, duration: Long) {
+        binding.ivGestureIcon.setImageResource(
+            if (deltaMs < 0L) R.drawable.ic_fast_rewind else R.drawable.ic_fast_forward
+        )
+        binding.tvGestureText.text = if (duration > 0L) {
+            getString(R.string.gesture_seek_position, formatDuration(position), formatDuration(duration))
+        } else {
+            formatDuration(position)
+        }
+        val sign = if (deltaMs < 0L) "-" else "+"
+        binding.tvGestureDetail.text = getString(
+            R.string.gesture_seek_delta,
+            sign,
+            formatDuration(abs(deltaMs)),
+        )
+        binding.tvGestureDetail.visibility = View.VISIBLE
+        binding.gestureProgress.progress = if (duration > 0L) {
+            (position * 1000 / duration).toInt().coerceIn(0, 1000)
+        } else {
+            0
+        }
+        presentGestureFeedback()
+    }
+
+    private fun showLevelGesture(mode: GestureMode, fraction: Float) {
+        val percent = (fraction.coerceIn(0f, 1f) * 100f).roundToInt()
+        if (mode == GestureMode.BRIGHTNESS) {
+            binding.ivGestureIcon.setImageResource(R.drawable.ic_brightness)
+            binding.tvGestureText.text = getString(R.string.gesture_brightness, percent)
+        } else {
+            binding.ivGestureIcon.setImageResource(R.drawable.ic_volume)
+            binding.tvGestureText.text = getString(R.string.gesture_volume, percent)
+        }
+        binding.tvGestureDetail.visibility = View.GONE
+        binding.gestureProgress.progress = (fraction.coerceIn(0f, 1f) * 1000).roundToInt()
+        presentGestureFeedback()
+    }
+
+    private fun presentGestureFeedback() {
+        mainHandler.removeCallbacks(hideGestureFeedbackRunnable)
+        binding.gestureFeedback.visibility = View.VISIBLE
+    }
+
+    private fun scheduleGestureFeedbackHide() {
+        mainHandler.removeCallbacks(hideGestureFeedbackRunnable)
+        mainHandler.postDelayed(hideGestureFeedbackRunnable, GESTURE_FEEDBACK_HIDE_DELAY_MS)
+    }
+
     // ------------------------------------------------------------------ 倍速控制
 
     private fun startSpeedBoost() {
         val p = player ?: return
         if (isLongPressBoost) return
         isLongPressBoost = true
+        suppressTap = true
         normalSpeed = p.playbackParameters.speed
         val boostSpeed = SettingsRepository.playbackSpeed
         p.playbackParameters = PlaybackParameters(boostSpeed)
@@ -1027,16 +1174,42 @@ class PlayerActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------ 屏幕方向
 
-    private fun toggleOrientation() {
-        val toLandscape = requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        requestedOrientation = if (toLandscape) {
-            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+    /**
+     * 屏幕旋转：每点一次转 90°，依次「竖屏 → 横屏 → 倒置竖屏 → 倒置横屏 → 竖屏」。
+     *
+     * 当前档位以 [requestedOrientation] 为准（不读 display.rotation）：系统旋转有动画，
+     * 连点几下时 display 还没更新，按它算会「原地踏步」。第一次点击时还没手动转过
+     * （跟随系统），按当前实际朝向取档，保证点下去就是转 90°。
+     */
+    private fun rotateScreen() {
+        val known = ROTATION_ORDER.indexOf(requestedOrientation)
+        val index = if (known >= 0) known else displayRotationIndex()
+        val next = ROTATION_ORDER[(index + 1) % ROTATION_ORDER.size]
+        requestedOrientation = next
+        showHint(getString(rotationHint(next)))
+    }
+
+    /** 当前物理朝向在 [ROTATION_ORDER] 里的下标（0 竖屏 / 90 横屏 / 180 倒竖 / 270 倒横） */
+    private fun displayRotationIndex(): Int {
+        val rotation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            display?.rotation ?: Surface.ROTATION_0
         } else {
-            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.rotation
         }
-        showHint(
-            getString(if (toLandscape) R.string.hint_orientation_landscape else R.string.hint_orientation_portrait)
-        )
+        return when (rotation) {
+            Surface.ROTATION_90 -> 1
+            Surface.ROTATION_180 -> 2
+            Surface.ROTATION_270 -> 3
+            else -> 0
+        }
+    }
+
+    private fun rotationHint(orientation: Int): Int = when (orientation) {
+        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE -> R.string.hint_orientation_landscape
+        ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT -> R.string.hint_orientation_reverse_portrait
+        ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE -> R.string.hint_orientation_reverse_landscape
+        else -> R.string.hint_orientation_portrait
     }
 
     private fun togglePlayPause() {
@@ -1053,15 +1226,22 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    private fun seekBy(deltaMs: Long) {
+    private fun seekBy(deltaMs: Long, fromGesture: Boolean = false) {
         val p = player ?: return
         val target = (p.currentPosition + deltaMs).coerceAtLeast(0L)
         val duration = p.duration
+        val clamped = if (duration > 0L) target.coerceAtMost(duration) else target
         userAdjustedPosition = true
-        p.seekTo(if (duration > 0) target.coerceAtMost(duration) else target)
+        p.seekTo(clamped)
         updateProgress()
-        showControls()
-        showHint(getString(R.string.hint_seek, formatDuration(p.currentPosition)))
+        if (fromGesture) {
+            showSeekGesture(clamped, deltaMs, duration)
+            scheduleGestureFeedbackHide()
+            scheduleHideControls()
+        } else {
+            showControls()
+            showHint(getString(R.string.hint_seek, formatDuration(clamped)))
+        }
     }
 
     private fun playNext(fromUser: Boolean): Boolean {
@@ -1172,6 +1352,8 @@ class PlayerActivity : AppCompatActivity() {
         binding.tvDuration.text = if (duration > 0) formatDuration(duration) else "--:--"
         if (duration > 0 && !binding.seekProgress.isPressed) {
             binding.seekProgress.progress = (position * 1000 / duration).toInt().coerceIn(0, 1000)
+            binding.seekProgress.secondaryProgress =
+                (p.bufferedPosition * 1000 / duration).toInt().coerceIn(0, 1000)
         }
     }
 
@@ -1250,6 +1432,22 @@ class PlayerActivity : AppCompatActivity() {
         private const val TICK_INTERVAL_MS = 500L
         private const val CONTROL_HIDE_DELAY_MS = 4_000L
         private const val HINT_HIDE_DELAY_MS = 1_500L
+        private const val GESTURE_FEEDBACK_HIDE_DELAY_MS = 450L
+
+        /** 左右 1/3 区域双击快退 / 快进，中间区域双击播放 / 暂停。 */
+        private const val DOUBLE_TAP_SEEK_MS = 10_000L
+        private const val DOUBLE_TAP_SIDE_FRACTION = 0.33f
+
+        /** 防止亮度过低导致屏幕全黑；只影响当前播放页。 */
+        private const val MIN_BRIGHTNESS = 0.02f
+
+        /** 屏幕方向按 90° 递增的顺序：竖屏 0° → 横屏 90° → 倒置竖屏 180° → 倒置横屏 270° */
+        private val ROTATION_ORDER = intArrayOf(
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT,
+            ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
+        )
 
         /** 快进 / 快退步长 */
         private const val SEEK_STEP_MS = 5_000L

@@ -751,8 +751,14 @@ class SmbSession(private val server: SmbServer) : Closeable {
 /**
  * 一个已打开的远程文件读句柄，支持按任意偏移开始读。
  *
- * [openAt] 会先关闭上一次的句柄；smbj 的 `FileInputStream.skip()` 只调整本地偏移，
- * 不产生网络请求，因此定位是「零成本」的。
+ * 两种读法：
+ * - [openAt] + [read]：顺序流，供字幕这类小文件整体读取用。
+ * - [readAt]：随机读，直接用 smbj 的 `File.read(byte[], fileOffset, off, len)` 复用
+ *   同一个已打开句柄，一条带 offset 的 SMB READ 就能定位，不产生 `openFile` 握手。
+ *   TS 视频的 seek 靠二分查找 PCR，需要大量随机定位，必须走这条路径。
+ *
+ * `FileInputStream.skip()` 只调整本地偏移（不产生网络请求），但 [openAt] 里的
+ * `openFile()` 是一次完整的 SMB Create 网络往返——seek 时反复 openFile 才是卡顿根源。
  */
 class SmbReadHandle(
     private val session: SmbSession,
@@ -833,6 +839,34 @@ class SmbReadHandle(
         if (n > 0) position += n
         return n
     }
+
+    /**
+     * 从绝对偏移随机读，不改变 [position] 或流游标。
+     *
+     * smbj 的 `File.read(byte[], fileOffset, off, len)` 复用同一个已打开句柄，
+     * 只发一条带 offset 的 SMB READ；EOF 返回 -1。连接异常时重建句柄后原偏移重试。
+     */
+    @Throws(IOException::class)
+    fun readAt(target: ByteArray, offset: Int, length: Int, absolutePosition: Long): Int {
+        var attempts = 0
+        while (true) {
+            val f = file ?: throw IOException("文件未打开：$path")
+            try {
+                return f.read(target, absolutePosition, offset, length)
+            } catch (e: Exception) {
+                cleanup()
+                attempts++
+                if (attempts >= 2 || !SmbSession.isConnectionError(e)) {
+                    throw if (e is IOException) e else IOException("读取 $path 失败", e)
+                }
+                session.invalidate()
+                doOpen(0L)
+            }
+        }
+    }
+
+    /** 底层文件句柄是否已打开 */
+    val isOpen: Boolean get() = file != null
 
     override fun close() = cleanup()
 

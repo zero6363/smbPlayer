@@ -175,13 +175,19 @@
     <string name="hint_seek">已跳至 %1$s</string>
     <string name="hint_swipe_seek">%1$s（%2$s）</string>
     <string name="hint_frame">第 %1$s 帧</string>
-    <string name="hint_orientation_landscape">已切换横屏</string>
-    <string name="hint_orientation_portrait">已切换竖屏</string>
+    <string name="hint_orientation_landscape">已旋转 90°：横屏</string>
+    <string name="hint_orientation_reverse_portrait">已旋转 90°：倒置竖屏</string>
+    <string name="hint_orientation_reverse_landscape">已旋转 90°：倒置横屏</string>
+    <string name="hint_orientation_portrait">已旋转 90°：竖屏</string>
     <string name="hint_play">播放</string>
     <string name="hint_pause">暂停</string>
+    <string name="gesture_seek_position">%1$s / %2$s</string>
+    <string name="gesture_seek_delta">%1$s%2$s</string>
+    <string name="gesture_brightness">亮度 %1$d%%</string>
+    <string name="gesture_volume">音量 %1$d%%</string>
 
     <!-- 屏幕方向 -->
-    <string name="orientation_toggle">切换横竖屏</string>
+    <string name="orientation_toggle">旋转屏幕（每次 90°）</string>
 
     <!-- 综合日志 -->
     <string name="log_title">日志</string>
