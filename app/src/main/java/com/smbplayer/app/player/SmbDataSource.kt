@@ -18,9 +18,11 @@ import java.util.concurrent.TimeUnit
  * 直接从 SMB 共享流式读取的 [DataSource]。
  *
  * 句柄跨 open/close 复用：ExoPlayer 在 seek 时会 close() 再 open() 同一个 DataSource 实例。
- * 若每次都 openFile()（一次完整 SMB Create 网络往返），TS 这种靠二分查找 PCR 定位的格式
- * 一次 seek 就要几十次握手，直接卡在 buffering。这里只在首次打开句柄，之后 seek 只改
- * 逻辑偏移，用 [SmbReadHandle.readAt] 的带 offset SMB READ 随机读，零握手定位。
+ * 只在首次 openFile()（一次 SMB Create 网络往返），之后 seek 用 [SmbReadHandle.reposition]
+ * 在同一 file 句柄上零握手定位——TS 的二分查找 PCR 一次要几十次定位，这样才不会卡。
+ *
+ * 顺序读走 [SmbReadHandle.read]（FileInputStream 带异步预读），**不能用裸随机读替代**，
+ * 否则每块数据都同步等一次网络往返，正常播放会明显变卡。
  *
  * close() 延迟回收句柄：seek 的 close→open 间隔是毫秒级，期间新的 open 会让排队中的
  * 关闭任务失效，从而复用同一句柄；真正不再使用（切集/退出）时才释放远程文件。
@@ -34,9 +36,6 @@ class SmbDataSource(
 ) : BaseDataSource(/* isNetwork= */ true) {
 
     private var handle: SmbReadHandle? = null
-
-    /** 当前逻辑读偏移（字节），由 open(dataSpec.position) 设置、read 累加 */
-    private var position: Long = 0L
     private var bytesRemaining: Long = 0L
     private var opened = false
 
@@ -59,16 +58,17 @@ class SmbDataSource(
         val h = handle ?: SmbReadHandle(session, shareName, remotePath).also { handle = it }
         if (!h.isOpen) {
             try {
-                // 只 openFile 一次拿到长度；定位交给 readAt 的带 offset READ
-                h.openAt(0L)
+                h.openAt(dataSpec.position)
             } catch (t: Throwable) {
                 runCatching { h.close() }
                 handle = null
                 throw IOException("无法打开 smb://$shareName/$remotePath", t)
             }
+        } else {
+            // 句柄已在：新建 stream + skip 定位，零网络握手
+            h.reposition(dataSpec.position)
         }
 
-        position = dataSpec.position
         bytesRemaining = if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
             dataSpec.length
         } else {
@@ -90,12 +90,12 @@ class SmbDataSource(
         val h = handle ?: throw IOException("SmbDataSource 未打开")
         val toRead = minOf(bytesRemaining, length.toLong()).toInt()
         val bytesRead = try {
-            h.readAt(target, offset, toRead, position)
+            // 顺序读：走 FileInputStream 的预读缓冲，性能最好
+            h.read(target, offset, toRead)
         } catch (t: Throwable) {
             throw IOException("读取 smb://$shareName/$remotePath 失败", t)
         }
         if (bytesRead > 0) {
-            position += bytesRead
             bytesRemaining -= bytesRead
             bytesTransferred(bytesRead)
         }

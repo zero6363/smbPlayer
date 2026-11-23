@@ -751,14 +751,13 @@ class SmbSession(private val server: SmbServer) : Closeable {
 /**
  * 一个已打开的远程文件读句柄，支持按任意偏移开始读。
  *
- * 两种读法：
- * - [openAt] + [read]：顺序流，供字幕这类小文件整体读取用。
- * - [readAt]：随机读，直接用 smbj 的 `File.read(byte[], fileOffset, off, len)` 复用
- *   同一个已打开句柄，一条带 offset 的 SMB READ 就能定位，不产生 `openFile` 握手。
- *   TS 视频的 seek 靠二分查找 PCR，需要大量随机定位，必须走这条路径。
+ * [openAt] 打开一次句柄（SMB Create 网络往返），之后：
+ * - [read]：走 smbj `FileInputStream`，内部有 buf + 异步预读（nextResponse），
+ *   顺序播放性能最好——**不要**用裸随机读替代它，否则每块都同步等一次网络往返会卡。
+ * - [reposition]：seek 时把流挪到绝对偏移。smbj 的 `skip()` 只改本地偏移、不发网络请求，
+ *   所以不重新 openFile 就能零握手定位。
  *
- * `FileInputStream.skip()` 只调整本地偏移（不产生网络请求），但 [openAt] 里的
- * `openFile()` 是一次完整的 SMB Create 网络往返——seek 时反复 openFile 才是卡顿根源。
+ * 字幕这类小文件仍是 [openAt] + [read] 整体读取。
  */
 class SmbReadHandle(
     private val session: SmbSession,
@@ -821,15 +820,41 @@ class SmbReadHandle(
         stream = st
 
         fileLength = f.length
-        position = startPosition
-        if (startPosition > 0) {
-            var remainingSkip = startPosition
-            while (remainingSkip > 0) {
-                val skipped = st.skip(remainingSkip)
-                if (skipped <= 0) break
-                remainingSkip -= skipped
-            }
+        seekStream(st, startPosition)
+    }
+
+    /**
+     * 把新 stream 的本地偏移挪到 [target]。
+     *
+     * 新建的 FileInputStream 没有预读缓冲，此时 `skip()` 只是 `offset += target`，
+     * 纯本地计算、零网络请求，往前往后都安全。（有缓冲时往回 skip 会算出负的
+     * 缓冲区下标，所以定位一律用「新 stream + skip」，不在旧 stream 上 skip。）
+     */
+    private fun seekStream(st: InputStream, target: Long) {
+        position = target
+        if (target <= 0L) return
+        var remainingSkip = target
+        while (remainingSkip > 0) {
+            val skipped = st.skip(remainingSkip)
+            if (skipped <= 0) break
+            remainingSkip -= skipped
         }
+    }
+
+    /**
+     * seek 到绝对偏移，不重新 openFile（零 SMB 握手）。
+     *
+     * 丢弃旧 stream 后从同一 file 句柄新建一个再定位——`getInputStream()` 只是
+     * 构造对象，`skip()` 在无缓冲的新 stream 上只改本地偏移，都不发网络请求。
+     * 保留 file 句柄本身的异步预读能力供随后的 [read] 使用。
+     */
+    @Throws(IOException::class)
+    fun reposition(target: Long) {
+        val f = file ?: throw IOException("文件未打开：$path")
+        runCatching { stream?.close() }
+        val st = f.getInputStream()
+        stream = st
+        seekStream(st, target)
     }
 
     @Throws(IOException::class)
@@ -838,31 +863,6 @@ class SmbReadHandle(
         val n = st.read(target, offset, length)
         if (n > 0) position += n
         return n
-    }
-
-    /**
-     * 从绝对偏移随机读，不改变 [position] 或流游标。
-     *
-     * smbj 的 `File.read(byte[], fileOffset, off, len)` 复用同一个已打开句柄，
-     * 只发一条带 offset 的 SMB READ；EOF 返回 -1。连接异常时重建句柄后原偏移重试。
-     */
-    @Throws(IOException::class)
-    fun readAt(target: ByteArray, offset: Int, length: Int, absolutePosition: Long): Int {
-        var attempts = 0
-        while (true) {
-            val f = file ?: throw IOException("文件未打开：$path")
-            try {
-                return f.read(target, absolutePosition, offset, length)
-            } catch (e: Exception) {
-                cleanup()
-                attempts++
-                if (attempts >= 2 || !SmbSession.isConnectionError(e)) {
-                    throw if (e is IOException) e else IOException("读取 $path 失败", e)
-                }
-                session.invalidate()
-                doOpen(0L)
-            }
-        }
     }
 
     /** 底层文件句柄是否已打开 */
