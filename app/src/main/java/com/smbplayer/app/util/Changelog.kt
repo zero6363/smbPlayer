@@ -17,6 +17,14 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.39",
+            date = "2026-11-23",
+            lines = listOf(
+                "调整 v1.38 的 TS seek 实现：顺序读改回 FileInputStream（带缓冲与异步预读），避免每读一块都同步等网络往返、导致正常播放变卡",
+                "seek 定位改为复用同一 SMB 文件句柄的 reposition()（新 stream + skip 只改本地偏移、零网络握手），TS 二分查找 PCR 仍不重新建立连接；v1.38 的续播卡加载修复继续保留",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.38",
             date = "2026-11-22",
             lines = listOf(
