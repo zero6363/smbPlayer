@@ -130,6 +130,9 @@ class PlayerActivity : AppCompatActivity() {
     private var normalSpeed = SettingsRepository.normalSpeed
     private var isLongPressBoost = false
 
+    /** 是否启用「左右分区纵滑调音量/亮度」，进入播放页时读一次设置 */
+    private var zoneVolumeBrightnessEnabled = false
+
     /** 播放页手势：横滑进度，左侧纵滑亮度，右侧纵滑音量。 */
     private enum class GestureMode { NONE, SEEK, BRIGHTNESS, VOLUME }
 
@@ -248,6 +251,7 @@ class PlayerActivity : AppCompatActivity() {
         binding = ActivityPlayerBinding.inflate(layoutInflater)
         setContentView(binding.root)
         volumeControlStream = AudioManager.STREAM_MUSIC
+        zoneVolumeBrightnessEnabled = SettingsRepository.zoneVolumeBrightness
 
         setupPlayer()
         setupControls()
@@ -811,6 +815,8 @@ class PlayerActivity : AppCompatActivity() {
             if (absX <= swipeActivateDistancePx && absY <= swipeActivateDistancePx) return
             gestureMode = when {
                 absX > swipeActivateDistancePx && absX > absY -> GestureMode.SEEK
+                // 分区纵滑调音量/亮度关闭时，纵向手势不生效（仅保留横滑调进度）
+                !zoneVolumeBrightnessEnabled -> return
                 absY > swipeActivateDistancePx && absY > absX -> {
                     val width = binding.tapArea.width.toFloat().takeIf { it > 0f }
                         ?: resources.displayMetrics.widthPixels.toFloat()

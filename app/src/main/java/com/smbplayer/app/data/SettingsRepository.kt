@@ -21,6 +21,7 @@ object SettingsRepository {
     private const val KEY_HISTORY_VISIBLE = "history_visible"
     private const val KEY_HISTORY_COUNT = "history_count"
     private const val KEY_FRAME_SAVE_TO_FOLDER = "frame_save_to_folder"
+    private const val KEY_ZONE_VOLUME_BRIGHTNESS = "zone_volume_brightness"
 
     /** 首页播放记录：默认显示、默认最多 12 条 */
     const val DEFAULT_HISTORY_COUNT = 12
@@ -127,5 +128,15 @@ object SettingsRepository {
         get() = store().getBoolean(KEY_FRAME_SAVE_TO_FOLDER, false)
         set(value) {
             store().edit().putBoolean(KEY_FRAME_SAVE_TO_FOLDER, value).apply()
+        }
+
+    /**
+     * 播放页「左右分区纵滑调音量/亮度」：左半屏纵滑调亮度、右半屏纵滑调音量。
+     * 默认关闭；关闭时纵滑手势不生效（横滑调进度不受影响）。
+     */
+    var zoneVolumeBrightness: Boolean
+        get() = store().getBoolean(KEY_ZONE_VOLUME_BRIGHTNESS, false)
+        set(value) {
+            store().edit().putBoolean(KEY_ZONE_VOLUME_BRIGHTNESS, value).apply()
         }
 }

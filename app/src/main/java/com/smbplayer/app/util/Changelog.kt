@@ -17,6 +17,14 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.40",
+            date = "2026-11-24",
+            lines = listOf(
+                "设置页新增「分区滑动调音量/亮度」开关（默认关闭）：开启后播放页左半屏上下滑调亮度、右半屏上下滑调音量；关闭时纵滑手势不生效，横滑调进度不受影响",
+                "开关状态即时保存，进入播放页时读取一次",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.39",
             date = "2026-11-23",
             lines = listOf(

@@ -209,6 +209,8 @@
     <string name="settings_frame_save_to_folder_hint">开启后「导出当前帧」直接写入视频所在的共享文件夹；关闭则保存到相册 Pictures/SMBPlayer</string>
     <string name="settings_history_visible">首页显示播放记录</string>
     <string name="settings_history_visible_hint">关闭后隐藏首页的播放记录卡片；播放进度仍会保存，不影响续播</string>
+    <string name="settings_zone_volume_brightness">分区滑动调音量/亮度</string>
+    <string name="settings_zone_volume_brightness_hint">开启后：播放页左半屏上下滑调亮度、右半屏上下滑调音量；关闭时仅横滑调进度</string>
     <string name="settings_history_count">播放记录条数</string>
     <string name="settings_history_count_hint">首页最多显示最近多少条播放记录，默认 12 条；置顶的记录不受此限制</string>
     <string name="settings_history_count_value">%1$d 条</string>

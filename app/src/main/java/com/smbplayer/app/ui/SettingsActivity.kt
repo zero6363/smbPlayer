@@ -61,6 +61,12 @@ class SettingsActivity : AppCompatActivity() {
             SettingsRepository.frameSaveToVideoFolder = isChecked
         }
 
+        // 分区滑动调音量/亮度
+        binding.swZoneVolumeBrightness.isChecked = SettingsRepository.zoneVolumeBrightness
+        binding.swZoneVolumeBrightness.setOnCheckedChangeListener { _, isChecked ->
+            SettingsRepository.zoneVolumeBrightness = isChecked
+        }
+
         // 长按临时倍速
         updateLongPressSpeedLabel()
         binding.rowLongPressSpeed.setOnClickListener { showLongPressSpeedDialog() }
