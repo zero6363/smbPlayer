@@ -67,6 +67,16 @@ class SettingsActivity : AppCompatActivity() {
             SettingsRepository.zoneVolumeBrightness = isChecked
         }
 
+        // 目录文件类型显示
+        binding.swShowImages.isChecked = SettingsRepository.showImages
+        binding.swShowImages.setOnCheckedChangeListener { _, isChecked ->
+            SettingsRepository.showImages = isChecked
+        }
+        binding.swShowOtherFiles.isChecked = SettingsRepository.showOtherFiles
+        binding.swShowOtherFiles.setOnCheckedChangeListener { _, isChecked ->
+            SettingsRepository.showOtherFiles = isChecked
+        }
+
         // 长按临时倍速
         updateLongPressSpeedLabel()
         binding.rowLongPressSpeed.setOnClickListener { showLongPressSpeedDialog() }

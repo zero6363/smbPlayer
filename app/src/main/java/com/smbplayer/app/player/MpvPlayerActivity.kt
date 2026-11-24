@@ -34,7 +34,6 @@ import com.smbplayer.app.R
 import com.smbplayer.app.data.PlaybackProgressRepository
 import com.smbplayer.app.data.ServerRepository
 import com.smbplayer.app.data.SettingsRepository
-import com.smbplayer.app.data.SpeedOptions
 import com.smbplayer.app.data.SmbServer
 import com.smbplayer.app.data.VideoFormats
 import com.smbplayer.app.databinding.ActivityMpvPlayerBinding
@@ -729,23 +728,64 @@ class MpvPlayerActivity : AppCompatActivity() {
         settingsPanel?.show()
     }
 
-    /** 常驻倍速选择：档位与设置页长按倍速共用的 SpeedOptions（14 档），应用到当前和后续视频 */
+    /** 常驻倍速选择：0.25 步进 + 常用倍速快捷，应用到当前和后续视频 */
     private fun showNormalSpeedDialog() {
-        val labels = SpeedOptions.VALUES.map { getString(R.string.settings_speed_value, it) }.toTypedArray()
-        val checked = SpeedOptions.indexOf(normalSpeed).takeIf { it >= 0 } ?: SpeedOptions.DEFAULT_INDEX
-        AlertDialog.Builder(this)
+        val view = android.view.LayoutInflater.from(this).inflate(R.layout.dialog_speed_control, null)
+        val d = AlertDialog.Builder(this)
             .setTitle(R.string.player_speed_title)
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                val sp = SpeedOptions.VALUES[which]
-                normalSpeed = sp
-                SettingsRepository.normalSpeed = sp
-                if (!isLongPressBoost) mpv?.setPropertyDouble("speed", sp.toDouble())
-                updateSpeedButton()
-                dialog.dismiss()
-                Toast.makeText(this, getString(R.string.settings_speed_value, sp), Toast.LENGTH_SHORT).show()
-            }
+            .setView(view)
             .setNegativeButton("取消", null)
-            .show()
+            .create()
+
+        // 与透明设置面板一致的 0.25 步进：index 0=0.25x .. 15=4.0x
+        val step = 0.25f
+        val maxIdx = 15
+        val ticks = floatArrayOf(0.5f, 1.0f, 1.75f, 2.0f, 4.0f)
+        val tickIds = listOf(R.id.speed_tick_0, R.id.speed_tick_1, R.id.speed_tick_2, R.id.speed_tick_3, R.id.speed_tick_4)
+        val presets = floatArrayOf(0.3f, 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f)
+        val presetIds = listOf(
+            R.id.speed_preset_0, R.id.speed_preset_1, R.id.speed_preset_2, R.id.speed_preset_3,
+            R.id.speed_preset_4, R.id.speed_preset_5, R.id.speed_preset_6,
+        )
+        val seek = view.findViewById<android.widget.SeekBar>(R.id.speed_seek)
+        val tvValue = view.findViewById<TextView>(R.id.speed_value)
+
+        fun applyValue(sp: Float, idx: Int) {
+            val i = idx.coerceIn(0, maxIdx)
+            seek.progress = i
+            tvValue.text = String.format("%.2fx", sp)
+            normalSpeed = sp
+            SettingsRepository.normalSpeed = sp
+            if (!isLongPressBoost) mpv?.setPropertyDouble("speed", sp.toDouble())
+            updateSpeedButton()
+            tickIds.forEachIndexed { ti, id ->
+                val tv = view.findViewById<TextView>(id) ?: return@forEachIndexed
+                val hit = kotlin.math.abs(sp - ticks[ti]) < 0.01f
+                tv.setTextColor(if (hit) getColor(R.color.player_accent) else getColor(R.color.player_control_text_dim))
+            }
+            presetIds.forEachIndexed { pi, id ->
+                val tv = view.findViewById<TextView>(id) ?: return@forEachIndexed
+                val hit = kotlin.math.abs(sp - presets[pi]) < 0.01f
+                tv.setTextColor(if (hit) getColor(R.color.player_accent) else getColor(R.color.player_control_text))
+            }
+        }
+        fun apply(idx: Int) {
+            val i = idx.coerceIn(0, maxIdx)
+            applyValue(step * (i + 1), i)
+        }
+
+        seek.progress = ((normalSpeed / step).roundToInt() - 1).coerceIn(0, maxIdx)
+        apply(seek.progress)
+        seek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: android.widget.SeekBar?, p: Int, fromUser: Boolean) { if (fromUser) apply(p) }
+            override fun onStartTrackingTouch(s: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(s: android.widget.SeekBar?) {}
+        })
+        view.findViewById<android.view.View>(R.id.speed_minus).setOnClickListener { apply(seek.progress - 1) }
+        view.findViewById<android.view.View>(R.id.speed_plus).setOnClickListener { apply(seek.progress + 1) }
+        tickIds.forEachIndexed { i, id -> view.findViewById<android.view.View>(id)?.setOnClickListener { applyValue(ticks[i], (ticks[i] / step).roundToInt() - 1) } }
+        presetIds.forEachIndexed { i, id -> view.findViewById<android.view.View>(id)?.setOnClickListener { applyValue(presets[i], (presets[i] / step).roundToInt() - 1) } }
+        d.show()
     }
 
     /** 长按临时倍速：用设置页的「长按倍速」值，松手恢复到常驻倍速 */

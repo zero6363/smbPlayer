@@ -132,8 +132,8 @@
                         android:layout_width="0dp"
                         android:layout_height="28dp"
                         android:layout_weight="1"
-                        android:max="4"
-                        android:progress="1"
+                        android:max="15"
+                        android:progress="3"
                         android:progressDrawable="@drawable/bg_seek_progress"
                         android:thumb="@drawable/bg_seek_thumb"
                         android:splitTrack="false" />
@@ -160,6 +160,30 @@
                     <TextView android:id="@+id/tick_2" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:gravity="center" android:text="1.75" android:textColor="@color/player_control_text" android:textSize="12sp" />
                     <TextView android:id="@+id/tick_3" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:gravity="center" android:text="2.0" android:textColor="@color/player_control_text" android:textSize="12sp" />
                     <TextView android:id="@+id/tick_4" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:gravity="center" android:text="4.0" android:textColor="@color/player_control_text" android:textSize="12sp" />
+                </LinearLayout>
+
+                <!-- 常用倍速快捷切换 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="常用倍速"
+                    android:textColor="@color/player_control_text_dim"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:orientation="horizontal">
+
+                    <TextView android:id="@+id/speed_preset_0" android:layout_width="0dp" android:layout_height="34dp" android:layout_weight="1" android:layout_marginEnd="2dp" android:background="@drawable/bg_hint_pill" android:gravity="center" android:text="0.3x" android:textColor="@color/player_control_text" android:textSize="11sp" />
+                    <TextView android:id="@+id/speed_preset_1" android:layout_width="0dp" android:layout_height="34dp" android:layout_weight="1" android:layout_marginEnd="2dp" android:background="@drawable/bg_hint_pill" android:gravity="center" android:text="0.5x" android:textColor="@color/player_control_text" android:textSize="11sp" />
+                    <TextView android:id="@+id/speed_preset_2" android:layout_width="0dp" android:layout_height="34dp" android:layout_weight="1" android:layout_marginEnd="2dp" android:background="@drawable/bg_hint_pill" android:gravity="center" android:text="1x" android:textColor="@color/player_control_text" android:textSize="11sp" />
+                    <TextView android:id="@+id/speed_preset_3" android:layout_width="0dp" android:layout_height="34dp" android:layout_weight="1" android:layout_marginEnd="2dp" android:background="@drawable/bg_hint_pill" android:gravity="center" android:text="1.5x" android:textColor="@color/player_control_text" android:textSize="11sp" />
+                    <TextView android:id="@+id/speed_preset_4" android:layout_width="0dp" android:layout_height="34dp" android:layout_weight="1" android:layout_marginEnd="2dp" android:background="@drawable/bg_hint_pill" android:gravity="center" android:text="2x" android:textColor="@color/player_control_text" android:textSize="11sp" />
+                    <TextView android:id="@+id/speed_preset_5" android:layout_width="0dp" android:layout_height="34dp" android:layout_weight="1" android:layout_marginEnd="2dp" android:background="@drawable/bg_hint_pill" android:gravity="center" android:text="3x" android:textColor="@color/player_control_text" android:textSize="11sp" />
+                    <TextView android:id="@+id/speed_preset_6" android:layout_width="0dp" android:layout_height="34dp" android:layout_weight="1" android:background="@drawable/bg_hint_pill" android:gravity="center" android:text="4x" android:textColor="@color/player_control_text" android:textSize="11sp" />
                 </LinearLayout>
             </LinearLayout>
         </ScrollView>

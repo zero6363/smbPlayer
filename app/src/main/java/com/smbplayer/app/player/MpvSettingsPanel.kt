@@ -52,11 +52,14 @@ class MpvSettingsPanel(
         }
         dialog = d
 
-        // 面板宽度 = 屏幕 62%，右对齐
+        // 面板宽度：横屏 62%，竖屏 88%（竖屏屏幕窄，内容多需要更宽的面板 + 滚动）
         val dm = android.util.DisplayMetrics()
         activity.resources.displayMetrics.let { dm.setTo(it) }
+        val portrait = activity.resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_PORTRAIT
+        val widthRatio = if (portrait) 0.88f else 0.62f
         d.findViewById<android.view.View>(R.id.settings_panel)?.layoutParams?.let { lp ->
-            lp.width = (dm.widthPixels * 0.62f).toInt()
+            lp.width = (dm.widthPixels * widthRatio).toInt()
             d.findViewById<android.view.View>(R.id.settings_panel)?.layoutParams = lp
         }
 
@@ -118,29 +121,44 @@ class MpvSettingsPanel(
         d.findViewById<TextView>(R.id.sleep_15).setOnClickListener { sleepMinutes = 15; applySleepTimer() }
         d.findViewById<TextView>(R.id.sleep_30).setOnClickListener { sleepMinutes = 30; applySleepTimer() }
 
-        // 倍速：1:1 复刻 reex 的 5 档滑块（0.5/1.0/1.75/2.0/4.0）
-        val speeds = floatArrayOf(0.5f, 1.0f, 1.75f, 2.0f, 4.0f)
+        // 倍速：0.25 步进（index 0 = 0.25x ... index 15 = 4.0x），−/+ 每次 ±0.25x。
+        // 刻度仅作参考标记（0.5/1.0/1.75/2.0/4.0），点击跳到对应倍速。
+        val speedStep = 0.25f
+        val speedMaxIdx = 15 // 0.25 * (15+1) = 4.0
+        val tickValues = floatArrayOf(0.5f, 1.0f, 1.75f, 2.0f, 4.0f)
         val ticks = listOf(R.id.tick_0, R.id.tick_1, R.id.tick_2, R.id.tick_3, R.id.tick_4)
+        val presets = floatArrayOf(0.3f, 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f)
+        val presetIds = listOf(
+            R.id.speed_preset_0, R.id.speed_preset_1, R.id.speed_preset_2, R.id.speed_preset_3,
+            R.id.speed_preset_4, R.id.speed_preset_5, R.id.speed_preset_6,
+        )
         val seek = d.findViewById<SeekBar>(R.id.seek_speed)
         val tvSpeed = d.findViewById<TextView>(R.id.tv_speed_value)
-        // 找到最接近当前倍速的档位
-        var currentIdx = 1
-        speeds.forEachIndexed { i, sp -> if (kotlin.math.abs(sp - getSpeed()) < kotlin.math.abs(speeds[currentIdx] - getSpeed())) currentIdx = i }
+        val currentIdx = ((getSpeed() / speedStep).roundToInt() - 1).coerceIn(0, speedMaxIdx)
         seek.progress = currentIdx
-        tvSpeed.text = String.format("%.2f", speeds[currentIdx])
 
-        fun applySpeed(idx: Int) {
-            val i = idx.coerceIn(0, speeds.lastIndex)
+        // 直接按倍速值应用（滑块 index 与快捷值都走这里）
+        fun applySpeedValue(spd: Float, idx: Int) {
+            val i = idx.coerceIn(0, speedMaxIdx)
             seek.progress = i
-            val spd = speeds[i]
             tvSpeed.text = String.format("%.2f", spd)
             mpv.setPropertyDouble("speed", spd.toDouble())
             onSpeedChanged(spd)
             ticks.forEachIndexed { ti, id ->
                 val tv = d.findViewById<TextView>(id) ?: return@forEachIndexed
-                tv.setTextColor(if (ti == i) activity.getColor(R.color.player_accent) else Color.WHITE)
-                tv.background = if (ti == i) activity.getDrawable(R.drawable.bg_hint_pill) else null
+                val hit = kotlin.math.abs(spd - tickValues[ti]) < 0.01f
+                tv.setTextColor(if (hit) activity.getColor(R.color.player_accent) else Color.WHITE)
+                tv.background = if (hit) activity.getDrawable(R.drawable.bg_hint_pill) else null
             }
+            presetIds.forEachIndexed { pi, id ->
+                val tv = d.findViewById<TextView>(id) ?: return@forEachIndexed
+                val hit = kotlin.math.abs(spd - presets[pi]) < 0.01f
+                tv.setTextColor(if (hit) activity.getColor(R.color.player_accent) else Color.WHITE)
+            }
+        }
+        fun applySpeed(idx: Int) {
+            val i = idx.coerceIn(0, speedMaxIdx)
+            applySpeedValue(speedStep * (i + 1), i)
         }
         applySpeed(currentIdx) // 初始化高亮
 
@@ -152,7 +170,15 @@ class MpvSettingsPanel(
         d.findViewById<android.view.View>(R.id.speed_minus).setOnClickListener { applySpeed(seek.progress - 1) }
         d.findViewById<android.view.View>(R.id.speed_plus).setOnClickListener { applySpeed(seek.progress + 1) }
         ticks.forEachIndexed { i, id ->
-            d.findViewById<android.view.View>(id)?.setOnClickListener { applySpeed(i) }
+            d.findViewById<android.view.View>(id)?.setOnClickListener {
+                applySpeedValue(tickValues[i], (tickValues[i] / speedStep).roundToInt() - 1)
+            }
+        }
+        // 常用倍速快捷切换（0.3 不在 0.25 网格上，直接设值；滑块位置取最接近的档）
+        presetIds.forEachIndexed { i, id ->
+            d.findViewById<android.view.View>(id)?.setOnClickListener {
+                applySpeedValue(presets[i], (presets[i] / speedStep).roundToInt() - 1)
+            }
         }
 
         d.setOnDismissListener { dialog = null; onClosed() }

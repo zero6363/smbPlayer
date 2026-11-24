@@ -22,6 +22,8 @@ object SettingsRepository {
     private const val KEY_HISTORY_COUNT = "history_count"
     private const val KEY_FRAME_SAVE_TO_FOLDER = "frame_save_to_folder"
     private const val KEY_ZONE_VOLUME_BRIGHTNESS = "zone_volume_brightness"
+    private const val KEY_SHOW_IMAGES = "show_images"
+    private const val KEY_SHOW_OTHER_FILES = "show_other_files"
 
     /** 首页播放记录：默认显示、默认最多 12 条 */
     const val DEFAULT_HISTORY_COUNT = 12
@@ -140,5 +142,25 @@ object SettingsRepository {
         get() = store().getBoolean(KEY_ZONE_VOLUME_BRIGHTNESS, false)
         set(value) {
             store().edit().putBoolean(KEY_ZONE_VOLUME_BRIGHTNESS, value).apply()
+        }
+
+    /**
+     * 目录列表是否显示图片类文件（jpg/png/gif 等）。默认显示（保持原行为）。
+     * 与 showOtherFiles 都关闭时，列表只显示视频（含 ts/flv/avi 等）。
+     */
+    var showImages: Boolean
+        get() = store().getBoolean(KEY_SHOW_IMAGES, true)
+        set(value) {
+            store().edit().putBoolean(KEY_SHOW_IMAGES, value).apply()
+        }
+
+    /**
+     * 目录列表是否显示「其他类」文件（既非视频也非图片，如字幕/文档/压缩包）。
+     * 默认显示；与 showImages 都关闭时列表只显示视频。
+     */
+    var showOtherFiles: Boolean
+        get() = store().getBoolean(KEY_SHOW_OTHER_FILES, true)
+        set(value) {
+            store().edit().putBoolean(KEY_SHOW_OTHER_FILES, value).apply()
         }
 }

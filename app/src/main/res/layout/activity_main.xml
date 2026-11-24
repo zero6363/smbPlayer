@@ -108,7 +108,7 @@
                 android:layout_height="wrap_content"
                 android:clipToPadding="false"
                 android:paddingBottom="6dp"
-                android:scrollbars="none" />
+                android:scrollbars="vertical" />
         </LinearLayout>
 
         <FrameLayout

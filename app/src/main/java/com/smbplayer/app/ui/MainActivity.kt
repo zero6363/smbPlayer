@@ -129,6 +129,17 @@ class MainActivity : AppCompatActivity() {
         favoriteAdapter.submit(favorites)
         binding.favoriteSection.visibility =
             if (favorites.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
+        // 收藏多了限制高度，让列表内部可滚动，避免占满首页把服务器/播放记录挤出屏幕。
+        // 单项约 64dp，超过 3 项时限高约 3 行；少于等于 3 项时按内容高度显示。
+        val maxItems = 3
+        val itemHdp = 64
+        val lp = binding.recyclerFavorite.layoutParams
+        lp.height = if (favorites.size > maxItems) {
+            (maxItems * itemHdp * resources.displayMetrics.density).toInt()
+        } else {
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+        }
+        binding.recyclerFavorite.layoutParams = lp
     }
 
     /**

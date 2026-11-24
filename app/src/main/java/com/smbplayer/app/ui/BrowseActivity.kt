@@ -52,6 +52,8 @@ class BrowseActivity : AppCompatActivity() {
     private var shareName: String = ""
     private var currentPath: String = ""
     private var entries: List<SmbEntry> = emptyList()
+    /** 当前目录的完整列表（未过滤），设置变更后从它重新应用类型过滤 */
+    private var allEntries: List<SmbEntry> = emptyList()
 
     private lateinit var layoutManager: LinearLayoutManager
 
@@ -204,6 +206,19 @@ class BrowseActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // 从设置页改了「显示图片/其他文件」开关后返回，按最新设置重新过滤缓存列表
+        if (allEntries.isNotEmpty()) {
+            entries = SortOptions.sorted(
+                filterVisibleFiles(allEntries),
+                SettingsRepository.sortField,
+                SettingsRepository.sortAscending,
+            )
+            adapter.submit(entries, progressByName(entries))
+        }
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString(STATE_SHARE, shareName)
@@ -306,13 +321,32 @@ class BrowseActivity : AppCompatActivity() {
     private fun applySort() {
         if (entries.isEmpty()) return
         entries = SortOptions.sorted(
-            entries,
+            filterVisibleFiles(allEntries.ifEmpty { entries }),
             SettingsRepository.sortField,
             SettingsRepository.sortAscending,
         )
         adapter.submit(entries, progressByName(entries))
         updateHeader(entries)
         binding.recycler.scrollToPosition(0)
+    }
+
+    /**
+     * 按设置过滤文件类型：目录永远保留；视频永远保留（含 ts/flv/avi 等）；
+     * 图片、其他文件分别由 showImages / showOtherFiles 开关控制。
+     * 两个开关都关时列表只剩视频 + 目录。
+     */
+    private fun filterVisibleFiles(list: List<SmbEntry>): List<SmbEntry> {
+        val showImages = SettingsRepository.showImages
+        val showOther = SettingsRepository.showOtherFiles
+        if (showImages && showOther) return list
+        return list.filter { entry ->
+            if (entry.isDirectory) return@filter true
+            when {
+                VideoFormats.isVideo(entry.name) -> true
+                VideoFormats.isImage(entry.name) -> showImages
+                else -> showOther
+            }
+        }
     }
 
     private fun videoNames(): List<String> =
@@ -410,9 +444,10 @@ class BrowseActivity : AppCompatActivity() {
             try {
                 logInfo("加载目录: 共享=$shareName 路径=$currentPath")
                 val list = withContext(Dispatchers.IO) { session.list(shareName, currentPath) }
-                // 按用户选的排序方式排（默认文件名升序，目录在前）
+                allEntries = list
+                // 按设置过滤文件类型（目录始终保留）
                 entries = SortOptions.sorted(
-                    list,
+                    filterVisibleFiles(list),
                     SettingsRepository.sortField,
                     SettingsRepository.sortAscending,
                 )
