@@ -132,7 +132,7 @@
                         android:layout_width="0dp"
                         android:layout_height="28dp"
                         android:layout_weight="1"
-                        android:max="15"
+                        android:max="39"
                         android:progress="3"
                         android:progressDrawable="@drawable/bg_seek_progress"
                         android:thumb="@drawable/bg_seek_thumb"
@@ -159,7 +159,7 @@
                     <TextView android:id="@+id/tick_1" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:gravity="center" android:text="1.0" android:textColor="@color/player_control_text" android:textSize="12sp" />
                     <TextView android:id="@+id/tick_2" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:gravity="center" android:text="1.75" android:textColor="@color/player_control_text" android:textSize="12sp" />
                     <TextView android:id="@+id/tick_3" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:gravity="center" android:text="2.0" android:textColor="@color/player_control_text" android:textSize="12sp" />
-                    <TextView android:id="@+id/tick_4" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:gravity="center" android:text="4.0" android:textColor="@color/player_control_text" android:textSize="12sp" />
+                    <TextView android:id="@+id/tick_4" android:layout_width="0dp" android:layout_height="26dp" android:layout_weight="1" android:gravity="center" android:text="10.0" android:textColor="@color/player_control_text" android:textSize="12sp" />
                 </LinearLayout>
 
                 <!-- 常用倍速快捷切换 -->

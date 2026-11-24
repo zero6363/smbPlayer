@@ -121,11 +121,11 @@ class MpvSettingsPanel(
         d.findViewById<TextView>(R.id.sleep_15).setOnClickListener { sleepMinutes = 15; applySleepTimer() }
         d.findViewById<TextView>(R.id.sleep_30).setOnClickListener { sleepMinutes = 30; applySleepTimer() }
 
-        // 倍速：0.25 步进（index 0 = 0.25x ... index 15 = 4.0x），−/+ 每次 ±0.25x。
+        // 倍速：0.25 步进（index 0 = 0.25x ... index 39 = 10.0x），−/+ 每次 ±0.25x。
         // 刻度仅作参考标记（0.5/1.0/1.75/2.0/4.0），点击跳到对应倍速。
         val speedStep = 0.25f
-        val speedMaxIdx = 15 // 0.25 * (15+1) = 4.0
-        val tickValues = floatArrayOf(0.5f, 1.0f, 1.75f, 2.0f, 4.0f)
+        val speedMaxIdx = 39 // 0.25 * (39+1) = 10.0
+        val tickValues = floatArrayOf(0.5f, 1.0f, 1.75f, 2.0f, 10.0f)
         val ticks = listOf(R.id.tick_0, R.id.tick_1, R.id.tick_2, R.id.tick_3, R.id.tick_4)
         val presets = floatArrayOf(0.3f, 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f)
         val presetIds = listOf(

@@ -761,10 +761,10 @@ class MpvPlayerActivity : AppCompatActivity() {
             .setNegativeButton("取消", null)
             .create()
 
-        // 与透明设置面板一致的 0.25 步进：index 0=0.25x .. 15=4.0x
+        // 与透明设置面板一致的 0.25 步进：index 0=0.25x .. 39=10.0x
         val step = 0.25f
-        val maxIdx = 15
-        val ticks = floatArrayOf(0.5f, 1.0f, 1.75f, 2.0f, 4.0f)
+        val maxIdx = 39
+        val ticks = floatArrayOf(0.5f, 1.0f, 1.75f, 2.0f, 10.0f)
         val tickIds = listOf(R.id.speed_tick_0, R.id.speed_tick_1, R.id.speed_tick_2, R.id.speed_tick_3, R.id.speed_tick_4)
         val presets = floatArrayOf(0.3f, 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f)
         val presetIds = listOf(
