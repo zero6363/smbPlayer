@@ -465,6 +465,7 @@ class MpvPlayerActivity : AppCompatActivity() {
             override fun handleOnBackPressed() {
                 val now = System.currentTimeMillis()
                 if (now - lastBackMs < 2_000L) {
+                    destroyed = true // 先标记，让随后触发的 surfaceDestroyed 跳过 detachSurface 避免 vo 崩溃
                     finish()
                 } else {
                     lastBackMs = now
@@ -502,6 +503,11 @@ class MpvPlayerActivity : AppCompatActivity() {
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
             override fun surfaceDestroyed(holder: SurfaceHolder) {
                 surfaceReady = false
+                // 关键：Activity 正在销毁/返回时不要 detachSurface——libmpv 的 vo 线程仍持有
+                // 这个 surface，detach 会把 native window 置 0，vo 线程随后断言 WinID!=0 失败
+                // 触发 SIGABRT，表现为「返回主页后过一会整个应用跳出」。
+                // 销毁路径交给 onDestroy 里的 mpv.destroy() 统一清理。
+                if (destroyed || isFinishing) return
                 mpv?.detachSurface()
             }
         })
