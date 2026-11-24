@@ -19,6 +19,16 @@
         <item name="android:windowFullscreen">true</item>
     </style>
 
+    <!-- reex 风格设置面板：全屏透明 Dialog，内容自己画半透明抽屉 -->
+    <style name="MpvSettingsDialog" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
     <!-- 播放页左上角分类按钮（1 / 2 / 3）：小圆角胶囊，点一下归档并切下一个 -->
     <style name="PlayerMoveButton" parent="">
         <item name="android:layout_width">30dp</item>

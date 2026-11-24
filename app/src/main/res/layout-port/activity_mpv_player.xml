@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black"
+    android:keepScreenOn="true">
+
+    <SurfaceView
+        android:id="@+id/mpv_surface"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <ProgressBar
+        android:id="@+id/loading"
+        android:layout_width="52dp"
+        android:layout_height="52dp"
+        android:layout_gravity="center"
+        android:indeterminateTint="@color/player_accent" />
+
+    <TextView
+        android:id="@+id/status_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginTop="60dp"
+        android:textColor="@color/player_control_text"
+        android:textSize="14sp"
+        android:visibility="gone" />
+
+    <!-- 点击画面切换控制栏显示/隐藏 -->
+    <View
+        android:id="@+id/tap_area"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <!-- reex 风格控制栏：圆角半透明面板，四周留边，画面上方干净 -->
+    <LinearLayout
+        android:id="@+id/controls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_marginStart="10dp"
+        android:layout_marginEnd="10dp"
+        android:layout_marginBottom="10dp"
+        android:background="@drawable/bg_control_panel_port"
+        android:orientation="vertical"
+        android:paddingStart="12dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="10dp">
+
+        <!-- 第一行：返回 / 文件名 / 倍速 / 时长 / 截图 / 列表 / 更多 -->
+        <LinearLayout
+            android:id="@+id/top_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/btn_back"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/back"
+                android:src="@drawable/ic_chevron_left"
+                app:tint="@color/player_control_text" />
+
+            <TextView
+                android:id="@+id/tv_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="middle"
+                android:maxLines="1"
+                android:paddingStart="4dp"
+                android:paddingEnd="8dp"
+                android:textColor="@color/player_control_text"
+                android:textSize="14sp" />
+
+            <!-- 常驻倍速药丸，点击弹出 14 档选择（与原版 SpeedOptions 一致） -->
+            <TextView
+                android:id="@+id/btn_speed"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/bg_hint_pill"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingStart="9dp"
+                android:paddingEnd="9dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp"
+                android:text="1.00x"
+                android:textColor="@color/on_primary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <!-- 长按临时倍速提示 -->
+            <TextView
+                android:id="@+id/tv_speed_hint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:background="@color/player_speed_tint"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingTop="2dp"
+                android:paddingBottom="2dp"
+                android:textColor="@color/on_primary"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tv_top_duration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingEnd="2dp"
+                android:textColor="@color/player_control_text_dim"
+                android:textSize="13sp"
+                android:text="--:--" />
+
+            <ImageButton
+                android:id="@+id/btn_frame_save"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_marginStart="2dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="导出当前帧"
+                android:src="@drawable/ic_camera_plus"
+                app:tint="@color/player_control_text" />
+
+            <ImageButton
+                android:id="@+id/btn_playlist"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="播放列表"
+                android:src="@drawable/ic_playlist_play"
+                app:tint="@color/player_control_text" />
+
+            <ImageButton
+                android:id="@+id/btn_more"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="更多"
+                android:src="@drawable/ic_more"
+                app:tint="@color/player_control_text" />
+        </LinearLayout>
+
+        <!-- 第二行：当前时间 / 细进度条 / 总时长 -->
+        <LinearLayout
+            android:id="@+id/bottom_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingTop="2dp">
+
+            <TextView
+                android:id="@+id/tv_current"
+                android:layout_width="52dp"
+                android:layout_height="wrap_content"
+                android:gravity="start|center_vertical"
+                android:textColor="@color/player_control_text"
+                android:textSize="13sp"
+                android:text="0:00" />
+
+            <SeekBar
+                android:id="@+id/seek_bar"
+                android:layout_width="0dp"
+                android:layout_height="24dp"
+                android:layout_weight="1"
+                android:max="1000"
+                android:progressDrawable="@drawable/bg_seek_progress"
+                android:thumb="@drawable/bg_seek_thumb"
+                android:thumbOffset="6dp"
+                android:splitTrack="false" />
+
+            <TextView
+                android:id="@+id/tv_total"
+                android:layout_width="52dp"
+                android:layout_height="wrap_content"
+                android:gravity="end|center_vertical"
+                android:textColor="@color/player_control_text"
+                android:textSize="13sp"
+                android:text="--:--" />
+        </LinearLayout>
+
+        <!-- 第三行：播放键靠左 + 上一个/快退/快进/下一个/旋转靠右 -->
+        <LinearLayout
+            android:id="@+id/playback_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingTop="4dp">
+
+            <ImageButton
+                android:id="@+id/btn_play_pause"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/btn_play_pause"
+                android:padding="11dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_play"
+                app:tint="@color/player_control_text" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <ImageButton
+                android:id="@+id/btn_prev_video"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/player_prev"
+                android:src="@drawable/ic_skip_previous"
+                app:tint="@color/player_control_text" />
+
+            <ImageButton
+                android:id="@+id/btn_rew"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/btn_rew"
+                android:src="@drawable/ic_fast_rewind"
+                app:tint="@color/player_control_text" />
+
+            <ImageButton
+                android:id="@+id/btn_ffwd"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/btn_ffwd"
+                android:src="@drawable/ic_fast_forward"
+                app:tint="@color/player_control_text" />
+
+            <ImageButton
+                android:id="@+id/btn_next_video"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/player_next"
+                android:src="@drawable/ic_skip_next"
+                app:tint="@color/player_control_text" />
+
+            <ImageButton
+                android:id="@+id/btn_rotate"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:layout_marginStart="4dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="旋转"
+                android:src="@drawable/ic_screen_rotation"
+                app:tint="@color/player_control_text" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

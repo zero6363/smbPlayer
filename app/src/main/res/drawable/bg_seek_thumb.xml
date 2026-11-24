@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 进度条滑块：白色小圆点，参考 reex 截图 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <size android:width="12dp" android:height="12dp" />
+    <solid android:color="@color/player_seek_thumb" />
+</shape>

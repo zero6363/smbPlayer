@@ -23,7 +23,7 @@ import com.smbplayer.app.data.VideoFormats
 import com.smbplayer.app.databinding.ActivityBrowseBinding
 import com.smbplayer.app.databinding.DialogSharePickerBinding
 import com.smbplayer.app.player.ImageViewerActivity
-import com.smbplayer.app.player.PlayerActivity
+import com.smbplayer.app.player.MpvPlayerActivity
 import com.smbplayer.app.smb.SmbEntry
 import com.smbplayer.app.smb.SmbGateway
 import com.smbplayer.app.smb.SmbSession
@@ -346,7 +346,7 @@ class BrowseActivity : AppCompatActivity() {
         // 从播放页回来会重新加载列表，先记住当前滚动位置
         rememberCurrentScroll()
         openPlayer.launch(
-            PlayerActivity.intent(
+            MpvPlayerActivity.intent(
                 context = this,
                 serverId = server.id,
                 share = shareName,

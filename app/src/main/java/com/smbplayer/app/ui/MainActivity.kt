@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -18,7 +19,7 @@ import com.smbplayer.app.data.SettingsRepository
 import com.smbplayer.app.data.SmbServer
 import com.smbplayer.app.databinding.ActivityMainBinding
 import com.smbplayer.app.databinding.DialogServerEditBinding
-import com.smbplayer.app.player.PlayerActivity
+import com.smbplayer.app.player.MpvPlayerActivity
 import com.smbplayer.app.smb.SmbGateway
 import com.smbplayer.app.util.AppLog
 import com.smbplayer.app.util.SmbPath
@@ -78,6 +79,20 @@ class MainActivity : AppCompatActivity() {
                 else -> false
             }
         }
+
+        // 两次返回才退出应用（防止从播放页返回后误触一次就退出）
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            private var lastBackMs = 0L
+            override fun handleOnBackPressed() {
+                val now = System.currentTimeMillis()
+                if (now - lastBackMs < 2_000L) {
+                    finish()
+                } else {
+                    lastBackMs = now
+                    toast("再按一次返回退出")
+                }
+            }
+        })
 
         refresh()
     }
@@ -162,7 +177,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         startActivity(
-            PlayerActivity.intent(
+            MpvPlayerActivity.intent(
                 context = this,
                 serverId = server.id,
                 share = record.shareName,

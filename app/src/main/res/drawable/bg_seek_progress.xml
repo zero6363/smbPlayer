@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 细进度条：灰色轨道 + 蓝色进度 + 半透明缓存，参考 reex 截图 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@android:id/background"
+        android:gravity="center_vertical"
+        android:height="3dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#66FFFFFF" />
+            <corners android:radius="2dp" />
+        </shape>
+    </item>
+    <item
+        android:id="@android:id/secondaryProgress"
+        android:gravity="center_vertical"
+        android:height="3dp">
+        <clip>
+            <shape android:shape="rectangle">
+                <solid android:color="#59FFFFFF" />
+                <corners android:radius="2dp" />
+            </shape>
+        </clip>
+    </item>
+    <item
+        android:id="@android:id/progress"
+        android:gravity="center_vertical"
+        android:height="3dp">
+        <clip>
+            <shape android:shape="rectangle">
+                <solid android:color="@color/player_accent" />
+                <corners android:radius="2dp" />
+            </shape>
+        </clip>
+    </item>
+</layer-list>

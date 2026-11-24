@@ -17,10 +17,11 @@ val sdkSigningProps = sdkSigningDir.resolve("signing.properties")
 
 android {
     namespace = "com.smbplayer.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.smbplayer.app"
+        // [mpv 实验分支] 改包名以便与原版共存测试
+        applicationId = "com.smbplayer.app.mpv"
         minSdk = 26
         targetSdk = 35
         versionCode = 50
@@ -103,6 +104,9 @@ dependencies {
     // 播放器
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
+
+    // [mpv 实验分支] 本地 libmpv AAR（46MB，GPL-3.0）
+    implementation(files("libs/libmpv-1.0.0.aar"))
 
     // SMB 客户端（smbj：主引擎，目录浏览/播放/删除）
     implementation("com.hierynomus:smbj:0.15.0")
