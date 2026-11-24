@@ -89,6 +89,14 @@ class MpvPlayerActivity : AppCompatActivity() {
     /** 自然播完后的自动下一集节流，避免短片 eof 连锁触发多次 */
     private var lastEndFileMs = 0L
 
+    /**
+     * Activity 销毁标志：onDestroy 开头即置位。mpv destroy 时会从内部线程回调
+     * observer（END_FILE 等），若不拦截会在销毁后 loadCurrent 触发 register/自动下一集，
+     * 甚至 native 层访问已释放对象导致进程崩溃（返回主页后延迟跳出）。
+     */
+    @Volatile
+    private var destroyed = false
+
     /** 常驻倍速（顶栏药丸选择；切集继承）。长按临时倍速见 isLongPressBoost。 */
     private var normalSpeed = SettingsRepository.normalSpeed
     private var isLongPressBoost = false
@@ -139,6 +147,7 @@ class MpvPlayerActivity : AppCompatActivity() {
 
     private val ticker = object : Runnable {
         override fun run() {
+            if (destroyed) return
             val m = mpv
             if (m != null) {
                 // 切集后给新文件 1.5s 缓冲，期间忽略旧文件 loadfile replace 的伪 END_FILE
@@ -240,7 +249,9 @@ class MpvPlayerActivity : AppCompatActivity() {
 
         // SMB 目录列举是网络操作，放后台线程
         Thread {
+            if (destroyed) return@Thread
             val listResult = runCatching { session.list(share, directory) }
+            if (destroyed) return@Thread
             listResult.exceptionOrNull()?.let {
                 android.util.Log.e("MpvPlayer", "SMB 目录列举失败: smb://$share/$directory", it)
             }
@@ -250,6 +261,7 @@ class MpvPlayerActivity : AppCompatActivity() {
                 entries.filter { !it.isDirectory && VideoFormats.isVideo(it.name) }.map { it.name }
             )
             runOnUiThread {
+                if (destroyed) return@runOnUiThread
                 videoNames = names
                 val idx = if (!targetName.isNullOrEmpty()) {
                     names.indexOfFirst { it.equals(targetName, ignoreCase = true) }
@@ -525,6 +537,7 @@ class MpvPlayerActivity : AppCompatActivity() {
             override fun eventProperty(property: String, value: Double) {}
             override fun eventProperty(property: String, value: String) {}
             override fun event(event: Int) {
+                if (destroyed) return // 销毁中忽略 mpv 内部线程的回调，避免延迟崩溃
                 if (event != MPVLib.MpvEvent.MPV_EVENT_END_FILE) return
                 // loadfile replace 切集时旧文件也会发 END_FILE，必须忽略，
                 // 否则点播放列表选一集会连锁跳到后面的集。
@@ -568,8 +581,10 @@ class MpvPlayerActivity : AppCompatActivity() {
 
         // register() 内部 openAt 是网络操作，必须在后台线程做，否则 NetworkOnMainThreadException
         Thread {
+            if (destroyed) return@Thread
             val token = runCatching { p.register(session, share, path) }.getOrElse { e ->
                 runOnUiThread {
+                    if (destroyed) return@runOnUiThread
                     binding.loading.visibility = android.view.View.GONE
                     binding.statusText.text = "打开 SMB 文件失败：${e.message}"
                     binding.statusText.visibility = android.view.View.VISIBLE
@@ -577,6 +592,7 @@ class MpvPlayerActivity : AppCompatActivity() {
                 return@Thread
             }
             runOnUiThread {
+                if (destroyed) { p.unregister(token); return@runOnUiThread }
                 currentToken?.let { p.unregister(it) }
                 currentToken = token
                 val resumeMs = PlaybackProgressRepository.get(server.id, share, path)?.resumePositionMs ?: 0L
@@ -587,6 +603,7 @@ class MpvPlayerActivity : AppCompatActivity() {
             }
 
             // 同名字幕（mpv 自带 libass 渲染，比自绘层效果好）
+            if (destroyed) return@Thread
             val base = name.substringBeforeLast('.')
             val subName = listOf("srt", "ass", "ssa", "vtt")
                 .mapNotNull { ext ->
@@ -598,7 +615,7 @@ class MpvPlayerActivity : AppCompatActivity() {
                         }?.name
                     } catch (_: Exception) { null }
                 }.firstOrNull()
-            if (!subName.isNullOrEmpty()) {
+            if (!subName.isNullOrEmpty() && !destroyed) {
                 val subPath = if (directory.isBlank()) subName else directory.trim('/') + "/" + subName
                 runCatching {
                     val subToken = p.register(session, share, subPath)
@@ -892,12 +909,15 @@ class MpvPlayerActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        destroyed = true // 先拦截所有异步回调，再开始销毁
         val posMs = ((runCatching { mpv?.getPropertyDouble("time-pos") }.getOrNull() ?: 0.0) * 1000).toLong()
         val durMs = ((runCatching { mpv?.getPropertyDouble("duration") }.getOrNull() ?: 0.0) * 1000).toLong()
         saveProgress(posMs, durMs)
         handler.removeCallbacks(ticker)
         handler.removeCallbacks(hideGestureFeedbackRunnable)
         tickerPosted = false
+        // 先停播放再 destroy，避免 mpv 内部线程仍在读 HTTP 流时句柄被 proxy 关闭
+        mpv?.let { runCatching { it.command(arrayOf("set", "pause", "yes")); it.command(arrayOf("stop")) } }
         currentToken?.let { proxy?.unregister(it) }
         runCatching { mpv?.destroy() }
         mpv = null
