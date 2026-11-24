@@ -6,14 +6,15 @@
     android:background="?android:attr/colorBackground"
     android:gravity="center_vertical"
     android:orientation="horizontal"
+    android:minHeight="72dp"
     android:paddingStart="16dp"
     android:paddingEnd="8dp"
-    android:paddingTop="8dp"
-    android:paddingBottom="8dp">
+    android:paddingTop="12dp"
+    android:paddingBottom="12dp">
 
     <ImageView
-        android:layout_width="32dp"
-        android:layout_height="32dp"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
         android:importantForAccessibility="no"
         android:src="@drawable/ic_folder"
         app:tint="@color/folder_tint" />
@@ -33,7 +34,7 @@
             android:ellipsize="middle"
             android:maxLines="2"
             android:textColor="@color/on_surface"
-            android:textSize="14sp"
+            android:textSize="16sp"
             android:textStyle="bold" />
 
         <TextView
@@ -44,7 +45,7 @@
             android:ellipsize="middle"
             android:maxLines="2"
             android:textColor="@color/on_surface_variant"
-            android:textSize="11sp" />
+            android:textSize="13sp" />
     </LinearLayout>
 
     <ImageButton

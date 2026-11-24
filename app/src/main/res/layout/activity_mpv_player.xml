@@ -141,6 +141,15 @@
                 android:text="--:--" />
 
             <ImageButton
+                android:id="@+id/btn_delete"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/player_delete_current"
+                android:src="@drawable/ic_delete"
+                app:tint="#FFFF8A80" />
+
+            <ImageButton
                 android:id="@+id/btn_frame_save"
                 android:layout_width="38dp"
                 android:layout_height="38dp"
@@ -263,6 +272,26 @@
                 android:contentDescription="@string/player_next"
                 android:src="@drawable/ic_skip_next"
                 app:tint="@color/player_control_text" />
+
+            <!-- 分类归档：把当前视频移到当前目录下的 1 / 2 / 3 文件夹 -->
+            <TextView
+                android:id="@+id/btn_move_1"
+                style="@style/PlayerMoveButton"
+                android:layout_marginStart="8dp"
+                android:contentDescription="@string/player_move_to_1"
+                android:text="1" />
+
+            <TextView
+                android:id="@+id/btn_move_2"
+                style="@style/PlayerMoveButton"
+                android:contentDescription="@string/player_move_to_2"
+                android:text="2" />
+
+            <TextView
+                android:id="@+id/btn_move_3"
+                style="@style/PlayerMoveButton"
+                android:contentDescription="@string/player_move_to_3"
+                android:text="3" />
 
             <View
                 android:layout_width="0dp"

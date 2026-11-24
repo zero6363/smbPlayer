@@ -28,6 +28,12 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import com.smbplayer.app.R
@@ -39,6 +45,7 @@ import com.smbplayer.app.data.VideoFormats
 import com.smbplayer.app.databinding.ActivityMpvPlayerBinding
 import com.smbplayer.app.smb.SmbGateway
 import com.smbplayer.app.smb.SmbSession
+import com.smbplayer.app.util.joinPath
 import com.smbplayer.app.util.sanitizeFileName
 import dev.jdtech.mpv.MPVLib
 import java.io.ByteArrayOutputStream
@@ -77,6 +84,8 @@ class MpvPlayerActivity : AppCompatActivity() {
     private var lastSaveMs = 0L
     private var controlsVisible = true
     private var seekingByUser = false
+    /** 归档移动中，防止连点重复移动 */
+    private var moveInProgress = false
 
     /**
      * 屏蔽 loadfile replace 产生的伪 END_FILE：mpv 用 loadfile ... replace 切集时，
@@ -291,6 +300,10 @@ class MpvPlayerActivity : AppCompatActivity() {
         binding.btnPrevVideo.setOnClickListener { switchVideo(currentIndex - 1) }
         binding.btnNextVideo.setOnClickListener { switchVideo(currentIndex + 1) }
         binding.btnFrameSave.setOnClickListener { saveCurrentFrame() }
+        binding.btnDelete.setOnClickListener { confirmDeleteCurrent() }
+        binding.btnMove1.setOnClickListener { moveCurrentTo("1") }
+        binding.btnMove2.setOnClickListener { moveCurrentTo("2") }
+        binding.btnMove3.setOnClickListener { moveCurrentTo("3") }
         // 旋转 = 每次顺时针 90°，四档循环（竖→横→倒竖→倒横），与原版一致。
         // 用于视频方向不对时把手机/画面转到合适朝向，而不只是横竖切换。
         binding.btnRotate.setOnClickListener {
@@ -858,6 +871,94 @@ class MpvPlayerActivity : AppCompatActivity() {
         currentIndex = target
         Toast.makeText(this, "播放：${videoNames[target]}", Toast.LENGTH_SHORT).show()
         loadCurrent()
+    }
+
+    // ------------------------------------------------------------------ 删除 / 分类归档（与原版一致）
+
+    private fun confirmDeleteCurrent() {
+        val name = videoNames.getOrNull(currentIndex) ?: return
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.delete_title)
+            .setMessage(getString(R.string.delete_file_message, name))
+            .setPositiveButton(R.string.delete_confirm) { _, _ -> deleteCurrent(name) }
+            .setNegativeButton(R.string.server_cancel, null)
+            .show()
+    }
+
+    /** 停播并释放当前 SMB 句柄：句柄开着时删除/改名会被服务端拒绝 */
+    private fun stopCurrentForRemoteOp() {
+        currentToken?.let { proxy?.unregister(it) }
+        currentToken = null
+        mpv?.command(arrayOf("stop"))
+    }
+
+    private fun deleteCurrent(name: String) {
+        val path = if (directory.isBlank()) name else directory.trim('/') + "/" + name
+        val resumePosition = currentPositionMs()
+        stopCurrentForRemoteOp()
+        lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) { session.delete(share, path, false) }
+                if (destroyed) return@launch
+                PlaybackProgressRepository.remove(server.id, share, path)
+                Toast.makeText(this@MpvPlayerActivity, getString(R.string.deleted, name), Toast.LENGTH_SHORT).show()
+                videoNames = videoNames.filterNot { it == name }
+                if (videoNames.isEmpty()) { finish(); return@launch }
+                currentIndex = currentIndex.coerceIn(0, videoNames.lastIndex)
+                loadCurrent()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (destroyed) return@launch
+                Toast.makeText(this@MpvPlayerActivity, "删除失败：${e.message}", Toast.LENGTH_SHORT).show()
+                loadCurrent() // 删除失败，从原位置继续播放
+            }
+        }
+    }
+
+    /** 把当前视频移到当前目录下的 folder（1/2/3），服务端 rename，然后接着播同位置的下一个 */
+    private fun moveCurrentTo(folder: String) {
+        if (moveInProgress) return
+        val name = videoNames.getOrNull(currentIndex) ?: return
+        if (directory.trim('/').substringAfterLast('/') == folder) {
+            Toast.makeText(this, getString(R.string.player_already_in_folder, folder), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val srcPath = if (directory.isBlank()) name else directory.trim('/') + "/" + name
+        val destDir = joinPath(directory, folder)
+        val position = currentPositionMs()
+        val durMs = ((runCatching { mpv?.getPropertyDouble("duration") }.getOrNull() ?: 0.0) * 1000).toLong()
+        moveInProgress = true
+        stopCurrentForRemoteOp()
+        lifecycleScope.launch {
+            try {
+                val movedPath = withContext(Dispatchers.IO) { session.moveFile(share, srcPath, joinPath(destDir, name)) }
+                if (destroyed) return@launch
+                PlaybackProgressRepository.remove(server.id, share, srcPath)
+                if (durMs > 0L && position > 0L) {
+                    PlaybackProgressRepository.save(server.id, share, movedPath, position, durMs)
+                }
+                val removedAt = videoNames.indexOf(name)
+                videoNames = videoNames.filterNot { it == name }
+                moveInProgress = false
+                if (removedAt < 0 || removedAt >= videoNames.size) {
+                    Toast.makeText(this@MpvPlayerActivity, getString(R.string.player_moved_last, folder), Toast.LENGTH_SHORT).show()
+                    finish()
+                    return@launch
+                }
+                Toast.makeText(this@MpvPlayerActivity, getString(R.string.player_moved, folder, name), Toast.LENGTH_SHORT).show()
+                currentIndex = removedAt.coerceIn(0, videoNames.lastIndex)
+                loadCurrent()
+            } catch (e: CancellationException) {
+                moveInProgress = false
+                throw e
+            } catch (e: Exception) {
+                moveInProgress = false
+                if (destroyed) return@launch
+                Toast.makeText(this@MpvPlayerActivity, "移动失败：${e.message}", Toast.LENGTH_SHORT).show()
+                loadCurrent()
+            }
+        }
     }
 
     /**
