@@ -121,13 +121,15 @@ object SettingsRepository {
         }
 
     /**
-     * 播放页「导出当前帧」的保存位置：true = 写到视频所在的 SMB 文件夹，
-     * false = 保存到手机相册 Pictures/SMBPlayer（默认，保持原有行为）。
+     * 播放页「导出当前帧」的保存位置：true = 保存到手机相册 Pictures/SMBPlayer（默认），
+     * false = 写到视频所在的 SMB 文件夹。
+     * 底层 key 沿用旧的 frame_save_to_folder 并取反，老配置自动迁移：
+     * 旧的 false（相册）→ 取反 true（相册）；旧的 true（视频目录）→ 取反 false（视频目录）。
      */
-    var frameSaveToVideoFolder: Boolean
-        get() = store().getBoolean(KEY_FRAME_SAVE_TO_FOLDER, false)
+    var frameSaveToGallery: Boolean
+        get() = !store().getBoolean(KEY_FRAME_SAVE_TO_FOLDER, false)
         set(value) {
-            store().edit().putBoolean(KEY_FRAME_SAVE_TO_FOLDER, value).apply()
+            store().edit().putBoolean(KEY_FRAME_SAVE_TO_FOLDER, !value).apply()
         }
 
     /**

@@ -33,6 +33,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var favoriteAdapter: FavoriteAdapter
     private lateinit var historyAdapter: HistoryAdapter
 
+    /** 两次返回退出：回到前台时重置计时，避免从播放页返回后残留时间戳导致一次返回就退出 */
+    private val backExitCallback = object : OnBackPressedCallback(true) {
+        var lastBackMs = 0L
+        override fun handleOnBackPressed() {
+            val now = System.currentTimeMillis()
+            if (now - lastBackMs < 2_000L) {
+                finish()
+            } else {
+                lastBackMs = now
+                toast("再按一次返回退出")
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -81,18 +95,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 两次返回才退出应用（防止从播放页返回后误触一次就退出）
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            private var lastBackMs = 0L
-            override fun handleOnBackPressed() {
-                val now = System.currentTimeMillis()
-                if (now - lastBackMs < 2_000L) {
-                    finish()
-                } else {
-                    lastBackMs = now
-                    toast("再按一次返回退出")
-                }
-            }
-        })
+        backExitCallback.lastBackMs = 0L
+        onBackPressedDispatcher.addCallback(this, backExitCallback)
 
         refresh()
     }
@@ -107,6 +111,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        backExitCallback.lastBackMs = 0L
         refresh()
     }
 

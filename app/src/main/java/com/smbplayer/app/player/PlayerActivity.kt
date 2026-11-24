@@ -1070,7 +1070,7 @@ class PlayerActivity : AppCompatActivity() {
         binding.groupFrameSave.isEnabled = false
         binding.groupFrameSave.alpha = 0.4f
         val filename = frameFileName()
-        if (SettingsRepository.frameSaveToVideoFolder) {
+        if (!SettingsRepository.frameSaveToGallery) {
             saveFrameToVideoFolder(frame, filename)
         } else {
             saveBitmapToGallery(frame, filename)

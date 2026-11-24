@@ -205,8 +205,8 @@
     <string name="settings_speed_hint">播放页长按屏幕时的临时倍速</string>
     <string name="settings_background_play">后台播放</string>
     <string name="settings_background_play_hint">关闭后，离开播放页或息屏时会暂停；开启则继续在后台播放</string>
-    <string name="settings_frame_save_to_folder">截图保存到视频文件夹</string>
-    <string name="settings_frame_save_to_folder_hint">开启后「导出当前帧」直接写入视频所在的共享文件夹；关闭则保存到相册 Pictures/SMBPlayer</string>
+    <string name="settings_frame_save_to_folder">截图保存到手机相册</string>
+    <string name="settings_frame_save_to_folder_hint">开启后「导出当前帧」保存到手机相册 Pictures/SMBPlayer；关闭则写入视频所在的共享文件夹</string>
     <string name="settings_history_visible">首页显示播放记录</string>
     <string name="settings_history_visible_hint">关闭后隐藏首页的播放记录卡片；播放进度仍会保存，不影响续播</string>
     <string name="settings_zone_volume_brightness">分区滑动调音量/亮度</string>

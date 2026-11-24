@@ -26,6 +26,7 @@ import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -118,13 +119,8 @@ class MpvPlayerActivity : AppCompatActivity() {
 
             override fun onDoubleTap(e: MotionEvent): Boolean {
                 if (gestureMode != GestureMode.NONE || isLongPressBoost) return false
-                val width = binding.tapArea.width.toFloat().takeIf { it > 0f }
-                    ?: resources.displayMetrics.widthPixels.toFloat()
-                when {
-                    e.x < width * DOUBLE_TAP_SIDE_FRACTION -> seekBy(-DOUBLE_TAP_SEEK_MS, fromGesture = true)
-                    e.x > width * (1f - DOUBLE_TAP_SIDE_FRACTION) -> seekBy(DOUBLE_TAP_SEEK_MS, fromGesture = true)
-                    else -> togglePlayPause()
-                }
+                // 全局双击 = 播放/暂停，不做分区快进快退
+                togglePlayPause()
                 return true
             }
 
@@ -236,6 +232,7 @@ class MpvPlayerActivity : AppCompatActivity() {
         zoneVolumeBrightnessEnabled = SettingsRepository.zoneVolumeBrightness
         updateSpeedButton()
         setupControls()
+        setupBackExit()
         initMpv()
 
         // debug_url 模式：mpv 已在 initMpv 里加载，跳过 SMB 目录列举
@@ -444,6 +441,25 @@ class MpvPlayerActivity : AppCompatActivity() {
         binding.gestureFeedback.visibility = android.view.View.VISIBLE
         handler.removeCallbacks(hideGestureFeedbackRunnable)
         handler.postDelayed(hideGestureFeedbackRunnable, 450L)
+    }
+
+    /**
+     * 播放页两次返回才退回：第一次提示，2 秒内第二次 finish() 只退播放页
+     * （不关应用，避免回到主页后又叠加主页的双返回直接退出）。
+     */
+    private fun setupBackExit() {
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            private var lastBackMs = 0L
+            override fun handleOnBackPressed() {
+                val now = System.currentTimeMillis()
+                if (now - lastBackMs < 2_000L) {
+                    finish()
+                } else {
+                    lastBackMs = now
+                    Toast.makeText(this@MpvPlayerActivity, "再按一次返回", Toast.LENGTH_SHORT).show()
+                }
+            }
+        })
     }
 
     private fun setControlsVisible(visible: Boolean) {
@@ -815,8 +831,8 @@ class MpvPlayerActivity : AppCompatActivity() {
                     os.toByteArray()
                 }
                 runOnUiThread { bitmap.recycle() }
-                if (SettingsRepository.frameSaveToVideoFolder) {
-                    // 写回 SMB 视频所在目录，重名加序号
+                if (!SettingsRepository.frameSaveToGallery) {
+                    // 关闭「存相册」= 写回 SMB 视频所在目录，重名加序号
                     var finalName = fileName
                     if (session.fileExists(share, if (directory.isBlank()) finalName else directory.trim('/') + "/" + finalName)) {
                         val stem = fileName.substringBeforeLast('.')
@@ -894,9 +910,6 @@ class MpvPlayerActivity : AppCompatActivity() {
         private const val TAG = "MpvPlayer"
         /** 快退/快进步长，与原版 PlayerActivity 一致 */
         private const val SEEK_STEP_MS = 5_000L
-        /** 双击左右 1/3 区域快退/快进步长，中间区域播放/暂停（与原版一致） */
-        private const val DOUBLE_TAP_SEEK_MS = 10_000L
-        private const val DOUBLE_TAP_SIDE_FRACTION = 0.33f
 
         const val EXTRA_SERVER_ID = "server_id"
         const val EXTRA_SHARE = "share"

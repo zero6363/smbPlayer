@@ -56,9 +56,9 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // 导出帧保存位置
-        binding.swFrameSaveToFolder.isChecked = SettingsRepository.frameSaveToVideoFolder
+        binding.swFrameSaveToFolder.isChecked = SettingsRepository.frameSaveToGallery
         binding.swFrameSaveToFolder.setOnCheckedChangeListener { _, isChecked ->
-            SettingsRepository.frameSaveToVideoFolder = isChecked
+            SettingsRepository.frameSaveToGallery = isChecked
         }
 
         // 分区滑动调音量/亮度
