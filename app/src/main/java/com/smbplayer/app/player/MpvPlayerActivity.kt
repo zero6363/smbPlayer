@@ -291,15 +291,13 @@ class MpvPlayerActivity : AppCompatActivity() {
         binding.btnPrevVideo.setOnClickListener { switchVideo(currentIndex - 1) }
         binding.btnNextVideo.setOnClickListener { switchVideo(currentIndex + 1) }
         binding.btnFrameSave.setOnClickListener { saveCurrentFrame() }
-        // 旋转 = 切换横竖屏（像系统横竖屏切换那样，控制栏随之重新布局）
+        // 旋转 = 每次顺时针 90°，四档循环（竖→横→倒竖→倒横），与原版一致。
+        // 用于视频方向不对时把手机/画面转到合适朝向，而不只是横竖切换。
         binding.btnRotate.setOnClickListener {
-            val portrait = resources.configuration.orientation ==
-                android.content.res.Configuration.ORIENTATION_PORTRAIT
-            requestedOrientation = if (portrait)
-                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            else
-                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            Toast.makeText(this, "已切换到${if (portrait) "横屏" else "竖屏"}", Toast.LENGTH_SHORT).show()
+            val current = rotationIndex()
+            val next = ROTATION_ORDER[(current + 1) % ROTATION_ORDER.size]
+            requestedOrientation = next
+            Toast.makeText(this, rotationHint(next), Toast.LENGTH_SHORT).show()
             // recreate() 会重建 Activity 并从 intent 重新读 index/targetName；
             // 必须先把「当前」切集状态写回 intent，否则旋转后会跳回最初进入时的那一集。
             intent.putExtra(EXTRA_INDEX, currentIndex)
@@ -452,6 +450,32 @@ class MpvPlayerActivity : AppCompatActivity() {
         binding.gestureFeedback.visibility = android.view.View.VISIBLE
         handler.removeCallbacks(hideGestureFeedbackRunnable)
         handler.postDelayed(hideGestureFeedbackRunnable, 450L)
+    }
+
+    /** 当前物理朝向在四档循环里的下标：0 竖 / 90 横 / 180 倒竖 / 270 倒横 */
+    private fun rotationIndex(): Int {
+        val requested = requestedOrientation
+        val known = ROTATION_ORDER.indexOf(requested)
+        if (known >= 0) return known
+        val rotation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            display?.rotation ?: android.view.Surface.ROTATION_0
+        } else {
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.rotation
+        }
+        return when (rotation) {
+            android.view.Surface.ROTATION_90 -> 1
+            android.view.Surface.ROTATION_180 -> 2
+            android.view.Surface.ROTATION_270 -> 3
+            else -> 0
+        }
+    }
+
+    private fun rotationHint(orientation: Int): String = when (orientation) {
+        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE -> "已旋转 90°：横屏"
+        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT -> "已旋转 90°：倒置竖屏"
+        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE -> "已旋转 90°：倒置横屏"
+        else -> "已旋转 90°：竖屏"
     }
 
     /**
@@ -985,6 +1009,14 @@ class MpvPlayerActivity : AppCompatActivity() {
         private const val TAG = "MpvPlayer"
         /** 快退/快进步长，与原版 PlayerActivity 一致 */
         private const val SEEK_STEP_MS = 5_000L
+
+        /** 旋转四档循环：竖 → 横 → 倒竖 → 倒横（每次 90°，与原版一致） */
+        private val ROTATION_ORDER = intArrayOf(
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT,
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
+        )
 
         const val EXTRA_SERVER_ID = "server_id"
         const val EXTRA_SHARE = "share"
