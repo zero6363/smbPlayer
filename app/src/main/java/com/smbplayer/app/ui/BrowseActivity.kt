@@ -420,7 +420,13 @@ class BrowseActivity : AppCompatActivity() {
                 showLoading(false)
                 logInfo("目录加载完成: ${list.size} 项")
                 updateHeader(list)
-                applyPendingRestore(list)
+                // 有恢复目标（从视频/子目录返回）时回到上次位置；否则首次打开一律从顶部开始，
+                // 避免 Activity 复用/重建时 RecyclerView 残留之前的滚动位置显示在中间。
+                if (pendingRestore == null) {
+                    binding.recycler.scrollToPosition(0)
+                } else {
+                    applyPendingRestore(list)
+                }
             } catch (e: CancellationException) {
                 throw e // 用户离开页面：正常取消，静默结束
             } catch (e: Exception) {

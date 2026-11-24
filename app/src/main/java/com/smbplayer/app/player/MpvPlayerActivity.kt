@@ -692,6 +692,15 @@ class MpvPlayerActivity : AppCompatActivity() {
             container.addView(row)
         }
         d.show()
+        // 打开时滚动到正在播放的条目（布局测量完成后再滚）
+        d.findViewById<android.widget.ScrollView>(R.id.playlist_scroller)?.post {
+            container.getChildAt(currentIndex)?.let { row ->
+                val scroller = d.findViewById<android.widget.ScrollView>(R.id.playlist_scroller) ?: return@post
+                // 让当前项居中：行顶部 - (可视高度 - 行高)/2
+                val target = row.top - (scroller.height - row.height) / 2
+                scroller.smoothScrollTo(0, target.coerceAtLeast(0))
+            }
+        }
     }
 
     /** 更多按钮：打开 reex 风格设置面板 */
