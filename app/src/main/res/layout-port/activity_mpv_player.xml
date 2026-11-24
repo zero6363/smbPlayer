@@ -36,6 +36,22 @@
         android:clickable="true"
         android:focusable="true" />
 
+    <!-- 双击/滑动手势的居中反馈（快进快退的目标时间） -->
+    <TextView
+        android:id="@+id/gesture_feedback"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_control_panel_port"
+        android:paddingStart="18dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="18dp"
+        android:paddingBottom="10dp"
+        android:textColor="@color/player_control_text"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
     <!-- reex 风格控制栏：圆角半透明面板，四周留边，画面上方干净 -->
     <LinearLayout
         android:id="@+id/controls"
@@ -192,7 +208,7 @@
                 android:text="--:--" />
         </LinearLayout>
 
-        <!-- 第三行：播放键靠左 + 上一个/快退/快进/下一个/旋转靠右 -->
+        <!-- 第三行：上一个/快退/播放/快进/下一个 五个键整体靠左，播放键居中，旋转键靠右 -->
         <LinearLayout
             android:id="@+id/playback_row"
             android:layout_width="match_parent"
@@ -200,22 +216,6 @@
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingTop="4dp">
-
-            <ImageButton
-                android:id="@+id/btn_play_pause"
-                android:layout_width="46dp"
-                android:layout_height="46dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/btn_play_pause"
-                android:padding="11dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_play"
-                app:tint="@color/player_control_text" />
-
-            <View
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="1" />
 
             <ImageButton
                 android:id="@+id/btn_prev_video"
@@ -236,6 +236,17 @@
                 app:tint="@color/player_control_text" />
 
             <ImageButton
+                android:id="@+id/btn_play_pause"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/btn_play_pause"
+                android:padding="11dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_play"
+                app:tint="@color/player_control_text" />
+
+            <ImageButton
                 android:id="@+id/btn_ffwd"
                 android:layout_width="42dp"
                 android:layout_height="42dp"
@@ -252,6 +263,11 @@
                 android:contentDescription="@string/player_next"
                 android:src="@drawable/ic_skip_next"
                 app:tint="@color/player_control_text" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
 
             <ImageButton
                 android:id="@+id/btn_rotate"

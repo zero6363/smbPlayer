@@ -1,6 +1,9 @@
 import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+// ABI 变体：-PmpvAbi=arm64（默认，精简）或 -PmpvAbi=all（全架构，模拟器可装）
+val abiVariant = (findProperty("mpvAbi") as? String) ?: "arm64"
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -26,6 +29,16 @@ android {
         targetSdk = 35
         versionCode = 50
         versionName = "1.40"
+
+        // [mpv 实验分支] ABI 由 -PmpvAbi 控制，默认 arm64 精简包：
+        //   assembleRelease -PmpvAbi=arm64 → 仅 arm64-v8a（约 46MB，真机/发布）
+        //   assembleRelease -PmpvAbi=all   → 全架构（约 113MB，模拟器可装）
+        ndk {
+            abiFilters += when (abiVariant) {
+                "all" -> listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+                else -> listOf("arm64-v8a")
+            }
+        }
     }
 
     signingConfigs {

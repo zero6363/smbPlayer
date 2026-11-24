@@ -3,6 +3,7 @@ package com.smbplayer.app.player
 import android.app.AlertDialog
 import android.app.Dialog
 import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -12,7 +13,11 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.media.AudioManager
 import android.provider.MediaStore
+import android.provider.Settings
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.PixelCopy
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -22,6 +27,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import com.smbplayer.app.R
 import com.smbplayer.app.data.PlaybackProgressRepository
 import com.smbplayer.app.data.ServerRepository
@@ -66,13 +73,20 @@ class MpvPlayerActivity : AppCompatActivity() {
     private var pendingLoad: Pair<String, Long>? = null
 
     private val handler = Handler(Looper.getMainLooper())
-    private val longPressRunnable = Runnable {
-        if (!isLongPressBoost) startSpeedBoost()
-    }
     private var tickerPosted = false
     private var lastSaveMs = 0L
     private var controlsVisible = true
     private var seekingByUser = false
+
+    /**
+     * 屏蔽 loadfile replace 产生的伪 END_FILE：mpv 用 loadfile ... replace 切集时，
+     * 旧文件会先发一个 END_FILE，若当「自然播完」处理就会连锁跳集。
+     * loadCurrent 里置 true，新文件真正开始播放（time-pos 变化）后清除。
+     */
+    private var suppressEndFile = false
+    private var loadFileAtMs = 0L
+    /** 自然播完后的自动下一集节流，避免短片 eof 连锁触发多次 */
+    private var lastEndFileMs = 0L
 
     /** 常驻倍速（顶栏药丸选择；切集继承）。长按临时倍速见 isLongPressBoost。 */
     private var normalSpeed = SettingsRepository.normalSpeed
@@ -80,10 +94,61 @@ class MpvPlayerActivity : AppCompatActivity() {
     /** reex 风格设置面板 */
     private var settingsPanel: MpvSettingsPanel? = null
 
+    // ---- 手势：单击显隐控制栏 / 双击三分区 / 横滑调进度 / 左右纵滑调亮度音量 / 长按临时倍速 ----
+    private enum class GestureMode { NONE, SEEK, BRIGHTNESS, VOLUME }
+    private var gestureMode = GestureMode.NONE
+    private var suppressTap = false
+    private var swipeStartX = 0f
+    private var swipeStartY = 0f
+    private var swipeStartPositionMs = 0L
+    private var swipeTargetPositionMs = 0L
+    private var swipeStartBrightness = 0.5f
+    private var swipeStartVolume = 0
+    /** 与原版共用同一设置开关，默认关闭 */
+    private var zoneVolumeBrightnessEnabled = false
+    private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    private val swipeActivateDistancePx by lazy { 24f * resources.displayMetrics.density }
+
+    /** 必须 lazy：构造时走 getResources，字段初始化早于 attach 会 NPE（与原版同坑） */
+    private val gestureDetector by lazy {
+        GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onLongPress(e: MotionEvent) {
+                if (gestureMode == GestureMode.NONE && !isLongPressBoost) startSpeedBoost()
+            }
+
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                if (gestureMode != GestureMode.NONE || isLongPressBoost) return false
+                val width = binding.tapArea.width.toFloat().takeIf { it > 0f }
+                    ?: resources.displayMetrics.widthPixels.toFloat()
+                when {
+                    e.x < width * DOUBLE_TAP_SIDE_FRACTION -> seekBy(-DOUBLE_TAP_SEEK_MS, fromGesture = true)
+                    e.x > width * (1f - DOUBLE_TAP_SIDE_FRACTION) -> seekBy(DOUBLE_TAP_SEEK_MS, fromGesture = true)
+                    else -> togglePlayPause()
+                }
+                return true
+            }
+
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                // 等双击判定结束再切控制栏，避免双击时控制栏先闪一下
+                if (suppressTap || gestureMode != GestureMode.NONE || isLongPressBoost) return false
+                setControlsVisible(!controlsVisible)
+                return true
+            }
+        })
+    }
+
+    private val hideGestureFeedbackRunnable = Runnable {
+        binding.gestureFeedback.visibility = android.view.View.GONE
+    }
+
     private val ticker = object : Runnable {
         override fun run() {
             val m = mpv
             if (m != null) {
+                // 切集后给新文件 1.5s 缓冲，期间忽略旧文件 loadfile replace 的伪 END_FILE
+                if (suppressEndFile && System.currentTimeMillis() - loadFileAtMs > 1_500L) {
+                    suppressEndFile = false
+                }
                 val posSec = runCatching { m.getPropertyDouble("time-pos") }.getOrNull() ?: 0.0
                 val durSec = runCatching { m.getPropertyDouble("duration") }.getOrNull() ?: 0.0
                 val posMs = (posSec * 1000).toLong()
@@ -168,6 +233,7 @@ class MpvPlayerActivity : AppCompatActivity() {
         currentIndex = startIndex.coerceAtLeast(0)
 
         normalSpeed = SettingsRepository.normalSpeed
+        zoneVolumeBrightnessEnabled = SettingsRepository.zoneVolumeBrightness
         updateSpeedButton()
         setupControls()
         initMpv()
@@ -226,6 +292,10 @@ class MpvPlayerActivity : AppCompatActivity() {
             else
                 android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             Toast.makeText(this, "已切换到${if (portrait) "横屏" else "竖屏"}", Toast.LENGTH_SHORT).show()
+            // recreate() 会重建 Activity 并从 intent 重新读 index/targetName；
+            // 必须先把「当前」切集状态写回 intent，否则旋转后会跳回最初进入时的那一集。
+            intent.putExtra(EXTRA_INDEX, currentIndex)
+            videoNames.getOrNull(currentIndex)?.let { intent.putExtra(EXTRA_TARGET_NAME, it) }
             recreate() // 让 layout-port / layout 重新 inflate（configChanges 下不会自动重载）
         }
 
@@ -240,21 +310,140 @@ class MpvPlayerActivity : AppCompatActivity() {
             }
         })
 
-        binding.tapArea.setOnClickListener {
-            if (isLongPressBoost) { isLongPressBoost = false; return@setOnClickListener }
-            setControlsVisible(!controlsVisible)
-        }
-        // 长按：锁定状态用于解锁；否则临时倍速（抬起恢复），与原版行为一致
-        binding.tapArea.setOnTouchListener { v, event ->
-            when (event.action) {
-                android.view.MotionEvent.ACTION_DOWN -> handler.postDelayed(longPressRunnable, 500L)
-                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                    handler.removeCallbacks(longPressRunnable)
+        // 单击显隐控制栏 / 双击三分区 / 横滑调进度 / 长按临时倍速，全部由手势统一识别
+        binding.tapArea.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    gestureMode = GestureMode.NONE
+                    suppressTap = false
+                    swipeStartX = event.x
+                    swipeStartY = event.y
+                    swipeStartPositionMs = currentPositionMs()
+                    swipeTargetPositionMs = swipeStartPositionMs
+                    swipeStartBrightness = currentWindowBrightness()
+                    swipeStartVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    handler.removeCallbacks(hideGestureFeedbackRunnable)
+                    binding.gestureFeedback.visibility = android.view.View.GONE
+                }
+                MotionEvent.ACTION_MOVE -> handleGestureMove(event)
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     if (isLongPressBoost) stopSpeedBoost()
+                    finishSeekGesture(cancelled = event.actionMasked == MotionEvent.ACTION_CANCEL)
                 }
             }
-            false // 不消费，单击仍由 OnClickListener 处理
+            gestureDetector.onTouchEvent(event)
+            true // 自己消费，单击/双击由 GestureDetector 回调处理
         }
+    }
+
+    /** 从 mpv 读当前播放位置（秒→毫秒） */
+    private fun currentPositionMs(): Long =
+        ((runCatching { mpv?.getPropertyDouble("time-pos") }.getOrNull() ?: 0.0) * 1000).toLong()
+
+    /** 判定手势主轴：横滑调进度；纵滑按设置开关注入左右分区调亮度/音量（与原版一致） */
+    private fun handleGestureMove(event: MotionEvent) {
+        val dx = event.x - swipeStartX
+        val dy = event.y - swipeStartY
+        if (gestureMode == GestureMode.NONE) {
+            val absX = abs(dx)
+            val absY = abs(dy)
+            if (absX <= swipeActivateDistancePx && absY <= swipeActivateDistancePx) return
+            gestureMode = when {
+                absX > swipeActivateDistancePx && absX > absY -> GestureMode.SEEK
+                !zoneVolumeBrightnessEnabled -> return
+                absY > swipeActivateDistancePx && absY > absX -> {
+                    val width = binding.tapArea.width.toFloat().takeIf { it > 0f }
+                        ?: resources.displayMetrics.widthPixels.toFloat()
+                    if (swipeStartX < width / 2f) GestureMode.BRIGHTNESS else GestureMode.VOLUME
+                }
+                else -> return
+            }
+            suppressTap = true
+            if (isLongPressBoost) stopSpeedBoost()
+        }
+        if (gestureMode == GestureMode.BRIGHTNESS || gestureMode == GestureMode.VOLUME) {
+            updateLevelGesture(event)
+            return
+        }
+        updateSeekPreview(event)
+    }
+
+    /** 左右分区纵滑：左半屏调当前 Activity 亮度，右半屏调媒体音量 */
+    private fun updateLevelGesture(event: MotionEvent) {
+        val height = binding.tapArea.height.toFloat().coerceAtLeast(1f)
+        val delta = (swipeStartY - event.y) / height
+        if (gestureMode == GestureMode.BRIGHTNESS) {
+            val brightness = (swipeStartBrightness + delta).coerceIn(0.02f, 1f)
+            window.attributes = window.attributes.apply { screenBrightness = brightness }
+            binding.gestureFeedback.text = "亮度 ${(brightness * 100).roundToInt()}%"
+        } else {
+            val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+            val volume = (swipeStartVolume + delta * max).roundToInt().coerceIn(0, max)
+            if (volume != audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) {
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, volume, 0)
+            }
+            binding.gestureFeedback.text = "音量 ${(volume.toFloat() / max * 100).roundToInt()}%"
+        }
+        binding.gestureFeedback.visibility = android.view.View.VISIBLE
+    }
+
+    private fun currentWindowBrightness(): Float {
+        val w = window.attributes.screenBrightness
+        if (w >= 0f) return w
+        return runCatching {
+            Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f
+        }.getOrDefault(0.5f)
+    }
+
+    /** 横滑：按位移非线性估算目标位置，松手前只预览、不真正 seek（与原版一致） */
+    private fun updateSeekPreview(event: MotionEvent) {
+        val dx = event.x - swipeStartX
+        val durationMs = ((runCatching { mpv?.getPropertyDouble("duration") }.getOrNull() ?: 0.0) * 1000).toLong()
+        val dist = abs(dx)
+        val width = binding.tapArea.width.toFloat().coerceAtLeast(1f)
+        // 滑满一屏约跳 1/10 时长，加速项再补 1/20，长视频也能快速定位
+        val baseRate: Float
+        val accel: Float
+        if (durationMs > 0L) {
+            baseRate = durationMs / (width * 10f)
+            accel = durationMs / (width * width * 10f)
+        } else {
+            baseRate = 60f
+            accel = 0.01f
+        }
+        val offsetMs = (baseRate * dist + accel * dist * dist / 2f) * if (dx >= 0f) 1f else -1f
+        val target = swipeStartPositionMs + offsetMs.toLong()
+        swipeTargetPositionMs = if (durationMs > 0L) target.coerceIn(0L, durationMs) else target.coerceAtLeast(0L)
+        val deltaSec = (swipeTargetPositionMs - swipeStartPositionMs) / 1000
+        val sign = if (deltaSec >= 0) "+" else "-"
+        binding.gestureFeedback.text = "$sign${abs(deltaSec)} 秒\n${formatTime(swipeTargetPositionMs)}"
+        binding.gestureFeedback.visibility = android.view.View.VISIBLE
+    }
+
+    /** 松手后一次性提交横滑目标，避免连续 seek 拖慢 SMB 网络流 */
+    private fun finishSeekGesture(cancelled: Boolean) {
+        val finished = gestureMode
+        if (finished == GestureMode.SEEK && !cancelled) {
+            val dur = ((runCatching { mpv?.getPropertyDouble("duration") }.getOrNull() ?: 0.0) * 1000).toLong()
+            val target = if (dur > 0L) swipeTargetPositionMs.coerceIn(0L, dur) else swipeTargetPositionMs
+            mpv?.command(arrayOf("seek", (target / 1000.0).toString(), "absolute"))
+        }
+        gestureMode = GestureMode.NONE
+        if (finished != GestureMode.NONE) {
+            handler.removeCallbacks(hideGestureFeedbackRunnable)
+            handler.postDelayed(hideGestureFeedbackRunnable, 450L)
+        }
+    }
+
+    /** 双击中间区：播放/暂停切换 */
+    private fun togglePlayPause() {
+        val m = mpv ?: return
+        val playing = runCatching { m.getPropertyBoolean("pause") }.getOrNull() == false
+        m.command(arrayOf("cycle", "pause"))
+        binding.gestureFeedback.text = if (playing) "暂停" else "播放"
+        binding.gestureFeedback.visibility = android.view.View.VISIBLE
+        handler.removeCallbacks(hideGestureFeedbackRunnable)
+        handler.postDelayed(hideGestureFeedbackRunnable, 450L)
     }
 
     private fun setControlsVisible(visible: Boolean) {
@@ -320,10 +509,15 @@ class MpvPlayerActivity : AppCompatActivity() {
             override fun eventProperty(property: String, value: Double) {}
             override fun eventProperty(property: String, value: String) {}
             override fun event(event: Int) {
-                // 播放结束自动下一集
-                if (event == MPVLib.MpvEvent.MPV_EVENT_END_FILE &&
-                    videoNames.size > 1 && currentIndex < videoNames.lastIndex
-                ) {
+                if (event != MPVLib.MpvEvent.MPV_EVENT_END_FILE) return
+                // loadfile replace 切集时旧文件也会发 END_FILE，必须忽略，
+                // 否则点播放列表选一集会连锁跳到后面的集。
+                if (suppressEndFile) return
+                val now = System.currentTimeMillis()
+                if (now - lastEndFileMs < 1500L) return // 短片 eof 连锁节流
+                lastEndFileMs = now
+                // 自然播完自动下一集
+                if (videoNames.size > 1 && currentIndex < videoNames.lastIndex) {
                     runOnUiThread {
                         currentIndex++
                         loadCurrent()
@@ -402,6 +596,9 @@ class MpvPlayerActivity : AppCompatActivity() {
     private fun doLoadFile(url: String, resumeMs: Long) {
         val m = mpv ?: return
         android.util.Log.i("MpvPlayer", "doLoadFile surfaceReady=$surfaceReady url=$url")
+        // 切集/列表点选期间屏蔽 END_FILE，避免 loadfile replace 的旧文件结束事件连锁跳集
+        suppressEndFile = true
+        loadFileAtMs = System.currentTimeMillis()
         if (resumeMs > 0L) m.setOptionString("start", (resumeMs / 1000.0).toString())
         else m.setOptionString("start", "0")
         // 倍速在切集时继承常驻值（与原版一致）
@@ -524,11 +721,20 @@ class MpvPlayerActivity : AppCompatActivity() {
         binding.btnSpeed.text = getString(R.string.settings_speed_value, normalSpeed)
     }
 
-    /** 相对快退/快进（毫秒），mpv seek relative 以秒为单位 */
-    private fun seekBy(deltaMs: Long) {
+    /** 相对快退/快进（毫秒），mpv seek relative 以秒为单位；手势来源用居中反馈替代 toast */
+    private fun seekBy(deltaMs: Long, fromGesture: Boolean = false) {
         val m = mpv ?: return
         m.command(arrayOf("seek", (deltaMs / 1000.0).toString(), "relative"))
-        Toast.makeText(this, if (deltaMs > 0) "快进 ${deltaMs / 1000} 秒" else "快退 ${-deltaMs / 1000} 秒", Toast.LENGTH_SHORT).show()
+        if (fromGesture) {
+            val target = currentPositionMs() + deltaMs
+            binding.gestureFeedback.text =
+                "${if (deltaMs > 0) "+" else "-"}${abs(deltaMs) / 1000} 秒\n${formatTime(target)}"
+            binding.gestureFeedback.visibility = android.view.View.VISIBLE
+            handler.removeCallbacks(hideGestureFeedbackRunnable)
+            handler.postDelayed(hideGestureFeedbackRunnable, 450L)
+        } else {
+            Toast.makeText(this, if (deltaMs > 0) "快进 ${deltaMs / 1000} 秒" else "快退 ${-deltaMs / 1000} 秒", Toast.LENGTH_SHORT).show()
+        }
     }
 
     /** 切换上一个/下一个视频，越界不动 */
@@ -657,11 +863,24 @@ class MpvPlayerActivity : AppCompatActivity() {
         else "$m:${s.toString().padStart(2, '0')}"
     }
 
+    override fun onStop() {
+        super.onStop()
+        // 与原版一致：关闭「后台播放」时，息屏/切后台即暂停，避免后台出声
+        if (!SettingsRepository.backgroundPlay) {
+            mpv?.command(arrayOf("set", "pause", "yes"))
+        }
+        if (isLongPressBoost) stopSpeedBoost()
+        val posMs = currentPositionMs()
+        val durMs = ((runCatching { mpv?.getPropertyDouble("duration") }.getOrNull() ?: 0.0) * 1000).toLong()
+        saveProgress(posMs, durMs)
+    }
+
     override fun onDestroy() {
         val posMs = ((runCatching { mpv?.getPropertyDouble("time-pos") }.getOrNull() ?: 0.0) * 1000).toLong()
         val durMs = ((runCatching { mpv?.getPropertyDouble("duration") }.getOrNull() ?: 0.0) * 1000).toLong()
         saveProgress(posMs, durMs)
         handler.removeCallbacks(ticker)
+        handler.removeCallbacks(hideGestureFeedbackRunnable)
         tickerPosted = false
         currentToken?.let { proxy?.unregister(it) }
         runCatching { mpv?.destroy() }
@@ -675,6 +894,9 @@ class MpvPlayerActivity : AppCompatActivity() {
         private const val TAG = "MpvPlayer"
         /** 快退/快进步长，与原版 PlayerActivity 一致 */
         private const val SEEK_STEP_MS = 5_000L
+        /** 双击左右 1/3 区域快退/快进步长，中间区域播放/暂停（与原版一致） */
+        private const val DOUBLE_TAP_SEEK_MS = 10_000L
+        private const val DOUBLE_TAP_SIDE_FRACTION = 0.33f
 
         const val EXTRA_SERVER_ID = "server_id"
         const val EXTRA_SHARE = "share"
