@@ -134,6 +134,12 @@ class MpvPlayerActivity : AppCompatActivity() {
     private var twoStartPanY = 0f
     private var swipeStartPanX = 0f
     private var swipeStartPanY = 0f
+    /** 当前是否有手指按在 tapArea 上；用于拦截抬手后才迟到的 onLongPress */
+    private var pointerDown = false
+    /** 旋转/重建后的短暂手势冷却，避免旧坐标系的事件被当成横滑快进 */
+    private var gestureCooldownUntil = 0L
+    /** 旋转后必须先收到新的 ACTION_DOWN，期间丢弃旧手势的 MOVE/UP */
+    private var gestureAwaitDown = false
     /** 0=单曲 1=顺序 2=随机 3=播完停止（不自动下一个） */
     private var repeatMode = 1
     /** 帧步进：开启后在导出帧按钮左侧显示逐帧后退/前进按钮，快退/快进仍保持秒级跳转 */
@@ -153,7 +159,7 @@ class MpvPlayerActivity : AppCompatActivity() {
     private val gestureDetector by lazy {
         GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onLongPress(e: MotionEvent) {
-                if (gestureMode == GestureMode.NONE && !isLongPressBoost && !twoFingerActive) startSpeedBoost()
+                if (pointerDown && gestureMode == GestureMode.NONE && !isLongPressBoost && !twoFingerActive) startSpeedBoost()
             }
 
             override fun onDoubleTap(e: MotionEvent): Boolean {
@@ -327,7 +333,9 @@ class MpvPlayerActivity : AppCompatActivity() {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        // 系统旋转（不走 recreate 的情况）也要重算字幕边距/字号缩放
+        // 系统旋转（不走 recreate 的情况）也要重算字幕边距/字号缩放；
+        // 同时丢弃旋转前的手势坐标，避免屏幕方向变化把旧位移当成横滑快进。
+        cancelActiveGesture()
         mpv?.let { SubtitleStyle.apply(it, this, reload = false) }
     }
 
@@ -364,6 +372,8 @@ class MpvPlayerActivity : AppCompatActivity() {
         // 旋转 = 每次顺时针 90°，四档循环（竖→横→倒竖→倒横），与原版一致。
         // 用于视频方向不对时把手机/画面转到合适朝向，而不只是横竖切换。
         binding.btnRotate.setOnClickListener {
+            // 先结束可能还在进行的长按/横滑，避免旋转后旧手势状态复现快进提示
+            cancelActiveGesture()
             val current = rotationIndex()
             val next = ROTATION_ORDER[(current + 1) % ROTATION_ORDER.size]
             requestedOrientation = next
@@ -396,13 +406,23 @@ class MpvPlayerActivity : AppCompatActivity() {
 
         // 单击显隐控制栏 / 双击三分区 / 横滑调进度 / 长按临时倍速，全部由手势统一识别
         binding.tapArea.setOnTouchListener { _, event ->
+            val action = event.actionMasked
+            // 旋转/重建刚发生时丢弃旧坐标系里的残余触摸事件
+            if (android.os.SystemClock.elapsedRealtime() < gestureCooldownUntil) {
+                pointerDown = false
+                return@setOnTouchListener true
+            }
+            // 旋转前已经按下的手指，其后续 MOVE/UP 仍带旧坐标，必须等新的 ACTION_DOWN
+            if (gestureAwaitDown && action != MotionEvent.ACTION_DOWN) return@setOnTouchListener true
             // 缩放平移开启时，双指手势优先（捏合缩放 + 双指拖动平移）
             if (handlePanZoom(event)) {
                 gestureDetector.onTouchEvent(event)
                 return@setOnTouchListener true
             }
-            when (event.actionMasked) {
+            when (action) {
                 MotionEvent.ACTION_DOWN -> {
+                    gestureAwaitDown = false
+                    pointerDown = true
                     if (controlsVisible) scheduleAutoHide()
                     gestureMode = GestureMode.NONE
                     suppressTap = false
@@ -419,8 +439,9 @@ class MpvPlayerActivity : AppCompatActivity() {
                 }
                 MotionEvent.ACTION_MOVE -> handleGestureMove(event)
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    pointerDown = false
                     if (isLongPressBoost) stopSpeedBoost()
-                    finishSeekGesture(cancelled = event.actionMasked == MotionEvent.ACTION_CANCEL)
+                    finishSeekGesture(cancelled = action == MotionEvent.ACTION_CANCEL)
                 }
             }
             gestureDetector.onTouchEvent(event)
@@ -532,6 +553,17 @@ class MpvPlayerActivity : AppCompatActivity() {
         val sign = if (deltaSec >= 0) "+" else "-"
         binding.gestureFeedback.text = "$sign${abs(deltaSec)} 秒\n${formatTime(swipeTargetPositionMs)}"
         binding.gestureFeedback.visibility = android.view.View.VISIBLE
+    }
+
+    /** 旋转/重建/离开页面前彻底清掉手势状态，避免旧坐标被当成横滑快进 */
+    private fun cancelActiveGesture() {
+        if (isLongPressBoost) stopSpeedBoost()
+        pointerDown = false
+        gestureMode = GestureMode.NONE
+        handler.removeCallbacks(hideGestureFeedbackRunnable)
+        binding.gestureFeedback.visibility = android.view.View.GONE
+        gestureAwaitDown = true
+        gestureCooldownUntil = android.os.SystemClock.elapsedRealtime() + 250L
     }
 
     /** 松手后一次性提交横滑目标，避免连续 seek 拖慢 SMB 网络流 */
@@ -658,18 +690,9 @@ class MpvPlayerActivity : AppCompatActivity() {
         val requested = requestedOrientation
         val known = ROTATION_ORDER.indexOf(requested)
         if (known >= 0) return known
-        val rotation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            display?.rotation ?: android.view.Surface.ROTATION_0
-        } else {
-            @Suppress("DEPRECATION")
-            windowManager.defaultDisplay.rotation
-        }
-        return when (rotation) {
-            android.view.Surface.ROTATION_90 -> 1
-            android.view.Surface.ROTATION_180 -> 2
-            android.view.Surface.ROTATION_270 -> 3
-            else -> 0
-        }
+        // 未显式锁定方向时，用当前 Activity 的配置方向判断，不能拿设备物理 rotation：
+        // 模拟器/平板可能机身是横的、应用窗口仍是竖的，否则第一次点旋转会直接跳到倒竖。
+        return if (resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 1 else 0
     }
 
     private fun rotationHint(orientation: Int): String = when (orientation) {
@@ -1159,10 +1182,9 @@ class MpvPlayerActivity : AppCompatActivity() {
     }
 
     private fun stopSpeedBoost() {
-        val m = mpv ?: return
         isLongPressBoost = false
-        m.setPropertyDouble("speed", normalSpeed.toDouble())
         binding.tvSpeedHint.visibility = android.view.View.GONE
+        mpv?.setPropertyDouble("speed", normalSpeed.toDouble())
     }
 
     private fun updateSpeedButton() {
@@ -1399,6 +1421,12 @@ class MpvPlayerActivity : AppCompatActivity() {
         else "$m:${s.toString().padStart(2, '0')}"
     }
 
+    override fun onPause() {
+        super.onPause()
+        // 切后台/锁屏时如果长按手指没有正常抬起，强制结束临时倍速，避免回来时还在加速
+        if (isLongPressBoost) stopSpeedBoost()
+    }
+
     override fun onStop() {
         super.onStop()
         // 与原版一致：关闭「后台播放」时，息屏/切后台即暂停，避免后台出声
@@ -1406,6 +1434,7 @@ class MpvPlayerActivity : AppCompatActivity() {
             mpv?.command(arrayOf("set", "pause", "yes"))
         }
         if (isLongPressBoost) stopSpeedBoost()
+        cancelActiveGesture()
         val posMs = currentPositionMs()
         val durMs = ((runCatching { mpv?.getPropertyDouble("duration") }.getOrNull() ?: 0.0) * 1000).toLong()
         saveProgress(posMs, durMs)
