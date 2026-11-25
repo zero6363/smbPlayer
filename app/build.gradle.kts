@@ -27,8 +27,8 @@ android {
         applicationId = "com.smbplayer.app.mpv"
         minSdk = 26
         targetSdk = 35
-        versionCode = 51
-        versionName = "1.41"
+        versionCode = 52
+        versionName = "1.42"
 
         // [mpv 实验分支] ABI 由 -PmpvAbi 控制，默认 arm64 精简包：
         //   assembleRelease -PmpvAbi=arm64 → 仅 arm64-v8a（约 46MB，真机/发布）

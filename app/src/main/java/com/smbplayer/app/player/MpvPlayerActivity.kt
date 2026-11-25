@@ -1,6 +1,5 @@
 package com.smbplayer.app.player
 
-import android.app.AlertDialog
 import android.app.Dialog
 import android.content.ContentValues
 import android.content.Context
@@ -58,7 +57,7 @@ import java.io.ByteArrayOutputStream
  * （与 reex 的 libsmb2 + stream_cb 架构等价）。
  *
  * 工具栏：顶栏 返回/文件名/时长/锁定/列表/更多；
- * 底栏 上一个/快退/播放/快进/下一个 + 进度/时间/截图/旋转。
+ * 底栏 上一个/快退/播放/快进/下一个 + 进度/时间/逐帧/截图/旋转。
  */
 class MpvPlayerActivity : AppCompatActivity() {
 
@@ -112,7 +111,7 @@ class MpvPlayerActivity : AppCompatActivity() {
     private var settingsPanel: MpvSettingsPanel? = null
 
     // ---- 手势：单击显隐控制栏 / 双击三分区 / 横滑调进度 / 左右纵滑调亮度音量 / 长按临时倍速 ----
-    private enum class GestureMode { NONE, SEEK, BRIGHTNESS, VOLUME }
+    private enum class GestureMode { NONE, SEEK, BRIGHTNESS, VOLUME, PAN }
     private var gestureMode = GestureMode.NONE
     private var suppressTap = false
     private var swipeStartX = 0f
@@ -121,6 +120,30 @@ class MpvPlayerActivity : AppCompatActivity() {
     private var swipeTargetPositionMs = 0L
     private var swipeStartBrightness = 0.5f
     private var swipeStartVolume = 0
+    /** 缩放平移：开启后双指捏合缩放、双指/放大后单指拖动平移 */
+    private var panZoomEnabled = false
+    private var videoZoom = 0f
+    private var videoPanX = 0f
+    private var videoPanY = 0f
+    private var twoFingerActive = false
+    private var twoStartSpan = 1f
+    private var twoStartFocusX = 0f
+    private var twoStartFocusY = 0f
+    private var twoStartZoom = 0f
+    private var twoStartPanX = 0f
+    private var twoStartPanY = 0f
+    private var swipeStartPanX = 0f
+    private var swipeStartPanY = 0f
+    /** 0=单曲 1=顺序 2=随机 3=播完停止（不自动下一个） */
+    private var repeatMode = 1
+    /** 帧步进：开启后在导出帧按钮左侧显示逐帧后退/前进按钮，快退/快进仍保持秒级跳转 */
+    private var frameStepEnabled = false
+    /** 控制栏自动隐藏（reex 默认 4s，可自定义） */
+    private var autoHideEnabled = true
+    private var autoHideSeconds = 4
+    private val autoHideRunnable = Runnable {
+        if (autoHideEnabled) setControlsVisible(false)
+    }
     /** 与原版共用同一设置开关，默认关闭 */
     private var zoneVolumeBrightnessEnabled = false
     private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
@@ -130,7 +153,7 @@ class MpvPlayerActivity : AppCompatActivity() {
     private val gestureDetector by lazy {
         GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onLongPress(e: MotionEvent) {
-                if (gestureMode == GestureMode.NONE && !isLongPressBoost) startSpeedBoost()
+                if (gestureMode == GestureMode.NONE && !isLongPressBoost && !twoFingerActive) startSpeedBoost()
             }
 
             override fun onDoubleTap(e: MotionEvent): Boolean {
@@ -168,13 +191,22 @@ class MpvPlayerActivity : AppCompatActivity() {
                 val durMs = (durSec * 1000).toLong()
                 if (durMs > 0L) {
                     binding.tvTotal.text = formatTime(durMs)
-                    binding.tvTopDuration.text = formatTime(durMs)
                     if (!seekingByUser && durSec > 0.0) {
                         binding.seekBar.progress = (posSec / durSec * 1000).toInt().coerceIn(0, 1000)
                     }
                     binding.loading.visibility = android.view.View.GONE
                 }
                 binding.tvCurrent.text = formatTime(posMs)
+                // 定时关闭倒计时提醒（reex 风格，播放键右侧）
+                val timerLeft = settingsPanel?.remainingTimerSeconds() ?: 0
+                if (timerLeft > 0) {
+                    binding.tvTimerBadge?.text = formatTime(timerLeft * 1000L)
+                    if (binding.timerBadge?.visibility != android.view.View.VISIBLE) {
+                        binding.timerBadge?.visibility = android.view.View.VISIBLE
+                    }
+                } else if (binding.timerBadge?.visibility != android.view.View.GONE) {
+                    binding.timerBadge?.visibility = android.view.View.GONE
+                }
                 // 播放图标随状态切换
                 val playing = runCatching { m.getPropertyBoolean("pause") }.getOrNull() == false
                 binding.btnPlayPause.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
@@ -247,10 +279,16 @@ class MpvPlayerActivity : AppCompatActivity() {
 
         normalSpeed = SettingsRepository.normalSpeed
         zoneVolumeBrightnessEnabled = SettingsRepository.zoneVolumeBrightness
+        frameStepEnabled = SettingsRepository.frameStepEnabled
+        autoHideEnabled = SettingsRepository.autoHideControls
+        autoHideSeconds = SettingsRepository.autoHideSeconds
+        PlayerTheme.applyBackground(binding.topPanel)
+        PlayerTheme.applyBackground(binding.controls)
         updateSpeedButton()
         setupControls()
         setupBackExit()
         initMpv()
+        scheduleAutoHide()
 
         // debug_url 模式：mpv 已在 initMpv 里加载，跳过 SMB 目录列举
         if (!intent.getStringExtra("debug_url").isNullOrEmpty()) return
@@ -287,6 +325,21 @@ class MpvPlayerActivity : AppCompatActivity() {
         }.start()
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // 系统旋转（不走 recreate 的情况）也要重算字幕边距/字号缩放
+        mpv?.let { SubtitleStyle.apply(it, this, reload = false) }
+    }
+
+    /** 循环模式：单曲时让 mpv 自身循环当前文件；其余模式在 END_FILE 回调里处理 */
+    private fun applyRepeatMode(mode: Int) {
+        repeatMode = mode
+        runCatching {
+            mpv?.setPropertyString("loop-file", if (mode == 0) "inf" else "no")
+            mpv?.setPropertyString("loop-playlist", "no")
+        }
+    }
+
     private fun setupControls() {
         binding.btnBack.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
         binding.btnSpeed.setOnClickListener { showNormalSpeedDialog() }
@@ -299,7 +352,11 @@ class MpvPlayerActivity : AppCompatActivity() {
         binding.btnFfwd.setOnClickListener { seekBy(SEEK_STEP_MS) }
         binding.btnPrevVideo.setOnClickListener { switchVideo(currentIndex - 1) }
         binding.btnNextVideo.setOnClickListener { switchVideo(currentIndex + 1) }
+        binding.btnFrameBack.setOnClickListener { stepFrame(-1) }
+        binding.btnFrameForward.setOnClickListener { stepFrame(1) }
         binding.btnFrameSave.setOnClickListener { saveCurrentFrame() }
+        updateFrameStepButtons()
+        binding.timerBadge?.setOnClickListener { settingsPanel?.openTimerPicker() }
         binding.btnDelete.setOnClickListener { confirmDeleteCurrent() }
         binding.btnMove1.setOnClickListener { moveCurrentTo("1") }
         binding.btnMove2.setOnClickListener { moveCurrentTo("2") }
@@ -329,10 +386,24 @@ class MpvPlayerActivity : AppCompatActivity() {
             }
         })
 
+        // 操作控制栏时重置自动隐藏计时，避免拖进度条拖到一半整个菜单消失
+        val resetAutoHide = android.view.View.OnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) scheduleAutoHide()
+            false
+        }
+        binding.controls.setOnTouchListener(resetAutoHide)
+        binding.topPanel.setOnTouchListener(resetAutoHide)
+
         // 单击显隐控制栏 / 双击三分区 / 横滑调进度 / 长按临时倍速，全部由手势统一识别
         binding.tapArea.setOnTouchListener { _, event ->
+            // 缩放平移开启时，双指手势优先（捏合缩放 + 双指拖动平移）
+            if (handlePanZoom(event)) {
+                gestureDetector.onTouchEvent(event)
+                return@setOnTouchListener true
+            }
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    if (controlsVisible) scheduleAutoHide()
                     gestureMode = GestureMode.NONE
                     suppressTap = false
                     swipeStartX = event.x
@@ -341,6 +412,8 @@ class MpvPlayerActivity : AppCompatActivity() {
                     swipeTargetPositionMs = swipeStartPositionMs
                     swipeStartBrightness = currentWindowBrightness()
                     swipeStartVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    swipeStartPanX = videoPanX
+                    swipeStartPanY = videoPanY
                     handler.removeCallbacks(hideGestureFeedbackRunnable)
                     binding.gestureFeedback.visibility = android.view.View.GONE
                 }
@@ -355,6 +428,19 @@ class MpvPlayerActivity : AppCompatActivity() {
         }
     }
 
+    /** 帧步进按钮只在开关开启时出现，位置固定在导出帧按钮左侧 */
+    private fun updateFrameStepButtons() {
+        val visibility = if (frameStepEnabled) android.view.View.VISIBLE else android.view.View.GONE
+        binding.btnFrameBack.visibility = visibility
+        binding.btnFrameForward.visibility = visibility
+    }
+
+    /** mpv 原生逐帧命令；执行后 mpv 会停在目标帧 */
+    private fun stepFrame(direction: Int) {
+        val command = if (direction < 0) "frame-back-step" else "frame-step"
+        mpv?.command(arrayOf(command))
+    }
+
     /** 从 mpv 读当前播放位置（秒→毫秒） */
     private fun currentPositionMs(): Long =
         ((runCatching { mpv?.getPropertyDouble("time-pos") }.getOrNull() ?: 0.0) * 1000).toLong()
@@ -367,18 +453,27 @@ class MpvPlayerActivity : AppCompatActivity() {
             val absX = abs(dx)
             val absY = abs(dy)
             if (absX <= swipeActivateDistancePx && absY <= swipeActivateDistancePx) return
-            gestureMode = when {
-                absX > swipeActivateDistancePx && absX > absY -> GestureMode.SEEK
-                !zoneVolumeBrightnessEnabled -> return
-                absY > swipeActivateDistancePx && absY > absX -> {
-                    val width = binding.tapArea.width.toFloat().takeIf { it > 0f }
-                        ?: resources.displayMetrics.widthPixels.toFloat()
-                    if (swipeStartX < width / 2f) GestureMode.BRIGHTNESS else GestureMode.VOLUME
+            if (panZoomEnabled && videoZoom > 0.01f) {
+                // 已放大：单指拖动优先用于平移画面，不再触发进度/亮度手势
+                gestureMode = GestureMode.PAN
+            } else {
+                gestureMode = when {
+                    absX > swipeActivateDistancePx && absX > absY -> GestureMode.SEEK
+                    !zoneVolumeBrightnessEnabled -> return
+                    absY > swipeActivateDistancePx && absY > absX -> {
+                        val width = binding.tapArea.width.toFloat().takeIf { it > 0f }
+                            ?: resources.displayMetrics.widthPixels.toFloat()
+                        if (swipeStartX < width / 2f) GestureMode.BRIGHTNESS else GestureMode.VOLUME
+                    }
+                    else -> return
                 }
-                else -> return
             }
             suppressTap = true
             if (isLongPressBoost) stopSpeedBoost()
+        }
+        if (gestureMode == GestureMode.PAN) {
+            updatePanGesture(event)
+            return
         }
         if (gestureMode == GestureMode.BRIGHTNESS || gestureMode == GestureMode.VOLUME) {
             updateLevelGesture(event)
@@ -454,6 +549,99 @@ class MpvPlayerActivity : AppCompatActivity() {
         }
     }
 
+    /** 双指缩放/平移：开启缩放平移后优先消费双指手势，避免误触进度/亮度 */
+    private fun handlePanZoom(event: MotionEvent): Boolean {
+        if (!panZoomEnabled) return false
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> twoFingerActive = false
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                if (event.pointerCount >= 2) {
+                    twoFingerActive = true
+                    twoStartSpan = pointerSpan(event)
+                    twoStartFocusX = (event.getX(0) + event.getX(1)) / 2f
+                    twoStartFocusY = (event.getY(0) + event.getY(1)) / 2f
+                    twoStartZoom = videoZoom
+                    twoStartPanX = videoPanX
+                    twoStartPanY = videoPanY
+                    suppressTap = true
+                    gestureMode = GestureMode.NONE
+                    if (isLongPressBoost) stopSpeedBoost()
+                    binding.gestureFeedback.visibility = android.view.View.GONE
+                    return true
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (twoFingerActive) {
+                    if (event.pointerCount >= 2) {
+                        val span = pointerSpan(event).coerceAtLeast(1f)
+                        val scale = (span / twoStartSpan.coerceAtLeast(1f)).coerceIn(0.2f, 8f)
+                        val zoom = (twoStartZoom + log2(scale)).coerceIn(0f, 2.5f)
+                        videoZoom = zoom
+                        if (zoom <= 0.01f) {
+                            videoPanX = 0f
+                            videoPanY = 0f
+                        } else {
+                            val w = binding.tapArea.width.toFloat().coerceAtLeast(1f)
+                            val h = binding.tapArea.height.toFloat().coerceAtLeast(1f)
+                            val focusX = (event.getX(0) + event.getX(1)) / 2f
+                            val focusY = (event.getY(0) + event.getY(1)) / 2f
+                            videoPanX = (twoStartPanX + (focusX - twoStartFocusX) / w)
+                                .coerceIn(-1.5f, 1.5f)
+                            videoPanY = (twoStartPanY + (focusY - twoStartFocusY) / h)
+                                .coerceIn(-1.5f, 1.5f)
+                        }
+                        applyVideoTransform()
+                    }
+                    return true
+                }
+            }
+            MotionEvent.ACTION_POINTER_UP -> if (twoFingerActive) return true
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (twoFingerActive) {
+                    twoFingerActive = false
+                    suppressTap = true
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private fun pointerSpan(event: MotionEvent): Float {
+        if (event.pointerCount < 2) return 1f
+        val dx = event.getX(0) - event.getX(1)
+        val dy = event.getY(0) - event.getY(1)
+        return kotlin.math.sqrt(dx * dx + dy * dy)
+    }
+
+    private fun log2(v: Float): Float =
+        (Math.log(v.toDouble().coerceAtLeast(1e-4)) / Math.log(2.0)).toFloat()
+
+    /** 放大后单指拖动平移画面 */
+    private fun updatePanGesture(event: MotionEvent) {
+        val w = binding.tapArea.width.toFloat().coerceAtLeast(1f)
+        val h = binding.tapArea.height.toFloat().coerceAtLeast(1f)
+        videoPanX = (swipeStartPanX + (event.x - swipeStartX) / w).coerceIn(-1.5f, 1.5f)
+        videoPanY = (swipeStartPanY + (event.y - swipeStartY) / h).coerceIn(-1.5f, 1.5f)
+        applyVideoTransform()
+    }
+
+    private fun applyVideoTransform() {
+        val m = mpv ?: return
+        runCatching {
+            m.setPropertyDouble("video-zoom", videoZoom.toDouble())
+            m.setPropertyDouble("video-pan-x", videoPanX.toDouble())
+            m.setPropertyDouble("video-pan-y", videoPanY.toDouble())
+        }
+    }
+
+    private fun resetPanZoom() {
+        videoZoom = 0f
+        videoPanX = 0f
+        videoPanY = 0f
+        applyVideoTransform()
+    }
+
     /** 双击中间区：播放/暂停切换 */
     private fun togglePlayPause() {
         val m = mpv ?: return
@@ -514,6 +702,16 @@ class MpvPlayerActivity : AppCompatActivity() {
     private fun setControlsVisible(visible: Boolean) {
         controlsVisible = visible
         binding.controls.visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+        binding.topPanel.visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+        scheduleAutoHide()
+    }
+
+    /** 控制栏可见时按设置延时自动收起；操作控件会重置计时 */
+    private fun scheduleAutoHide() {
+        handler.removeCallbacks(autoHideRunnable)
+        if (controlsVisible && autoHideEnabled) {
+            handler.postDelayed(autoHideRunnable, autoHideSeconds.coerceIn(1, 20) * 1000L)
+        }
     }
 
     private fun initMpv() {
@@ -552,12 +750,13 @@ class MpvPlayerActivity : AppCompatActivity() {
             val instance = MPVLib.create(this)!!
             mpv = instance
             // 硬解(MediaCodec)在这个 AAR + HTTP 流下拿不到 native_window（video=eof 无画面）。
-            // 软解不依赖 native_window，兼容性也更好（TS 里 MPEG-2/AC3 等都能解）。
-            instance.setOptionString("hwdec", "no")
+            // 默认软解保证兼容；设置里可切 no / auto / mediacodec-copy，下次打开视频生效。
+            instance.setOptionString("hwdec", SettingsRepository.hwdecMode)
             instance.setOptionString("keep-open", "yes")
-            instance.setOptionString("sub-auto", "no")
-            instance.setOptionString("osd-level", "0") // 关闭 mpv 原生 OSD，避免与应用工具栏重叠
+            instance.setOptionString("osd-level", "1") // 只允许字幕 OSD，不显示 mpv 原生状态文字
+            SubtitleStyle.applyOptions(instance, this)
             instance.init()
+            SubtitleStyle.apply(instance, this, reload = false)
             addMpvObserver(instance)
             proxy = SmbHttpProxy.create().also { it.start() }
             if (!tickerPosted) {
@@ -580,6 +779,18 @@ class MpvPlayerActivity : AppCompatActivity() {
             override fun eventProperty(property: String, value: String) {}
             override fun event(event: Int) {
                 if (destroyed) return // 销毁中忽略 mpv 内部线程的回调，避免延迟崩溃
+                if (event == MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED) {
+                    // 注意：不能在 mpv 的事件线程里同步调 mpv API，否则会死锁把 UI 一起卡住
+                    handler.post {
+                        runCatching {
+                            instance.setPropertyString(
+                                "sid",
+                                if (SettingsRepository.autoLoadSubtitles) "1" else "no"
+                            )
+                        }
+                    }
+                    return
+                }
                 if (event != MPVLib.MpvEvent.MPV_EVENT_END_FILE) return
                 // loadfile replace 切集时旧文件也会发 END_FILE，必须忽略，
                 // 否则点播放列表选一集会连锁跳到后面的集。
@@ -587,12 +798,28 @@ class MpvPlayerActivity : AppCompatActivity() {
                 val now = System.currentTimeMillis()
                 if (now - lastEndFileMs < 1500L) return // 短片 eof 连锁节流
                 lastEndFileMs = now
-                // 自然播完自动下一集
-                if (videoNames.size > 1 && currentIndex < videoNames.lastIndex) {
-                    runOnUiThread {
-                        currentIndex++
-                        loadCurrent()
+                // 按循环模式决定是否自动播下一个：
+                // 0 单曲（mpv loop-file=inf 兜底重播）/ 1 顺序 / 2 随机 / 3 播完停止
+                when (repeatMode) {
+                    1 -> if (videoNames.size > 1 && currentIndex < videoNames.lastIndex) {
+                        runOnUiThread {
+                            currentIndex++
+                            loadCurrent()
+                        }
                     }
+                    2 -> if (videoNames.size > 1) {
+                        val candidates = videoNames.indices.filter { it != currentIndex }
+                        if (candidates.isNotEmpty()) {
+                            runOnUiThread {
+                                currentIndex = candidates.random()
+                                loadCurrent()
+                            }
+                        }
+                    }
+                    0 -> if (videoNames.size == 1 || currentIndex in videoNames.indices) {
+                        runOnUiThread { if (!destroyed) loadCurrent() }
+                    }
+                    else -> Unit // 播完停止：不自动下一个
                 }
             }
         })
@@ -644,24 +871,25 @@ class MpvPlayerActivity : AppCompatActivity() {
                 else pendingLoad = url to resumeMs
             }
 
-            // 同名字幕（mpv 自带 libass 渲染，比自绘层效果好）
-            if (destroyed) return@Thread
-            val base = name.substringBeforeLast('.')
-            val subName = listOf("srt", "ass", "ssa", "vtt")
-                .mapNotNull { ext ->
-                    try {
-                        session.list(share, directory).firstOrNull {
-                            !it.isDirectory && it.name.substringBeforeLast('.')
-                                .equals(base, ignoreCase = true) &&
-                                it.name.substringAfterLast('.').equals(ext, ignoreCase = true)
-                        }?.name
-                    } catch (_: Exception) { null }
-                }.firstOrNull()
-            if (!subName.isNullOrEmpty() && !destroyed) {
-                val subPath = if (directory.isBlank()) subName else directory.trim('/') + "/" + subName
-                runCatching {
-                    val subToken = p.register(session, share, subPath)
-                    m.command(arrayOf("sub-add", p.url(subToken), "select"))
+            // 同名字幕（mpv 自带 libass 渲染，比自绘层效果好）；可在设置里关闭自动加载
+            if (SettingsRepository.autoLoadSubtitles && !destroyed) {
+                val base = name.substringBeforeLast('.')
+                val subName = listOf("srt", "ass", "ssa", "vtt")
+                    .mapNotNull { ext ->
+                        try {
+                            session.list(share, directory).firstOrNull {
+                                !it.isDirectory && it.name.substringBeforeLast('.')
+                                    .equals(base, ignoreCase = true) &&
+                                    it.name.substringAfterLast('.').equals(ext, ignoreCase = true)
+                            }?.name
+                        } catch (_: Exception) { null }
+                    }.firstOrNull()
+                if (!subName.isNullOrEmpty() && !destroyed) {
+                    val subPath = if (directory.isBlank()) subName else directory.trim('/') + "/" + subName
+                    runCatching {
+                        val subToken = p.register(session, share, subPath)
+                        m.command(arrayOf("sub-add", p.url(subToken), "select"))
+                    }
                 }
             }
         }.start()
@@ -692,14 +920,47 @@ class MpvPlayerActivity : AppCompatActivity() {
         d.window?.let { w ->
             w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
             w.setDimAmount(0f)
+            // 播放页处于沉浸式，弹窗也要同步隐藏状态栏/导航栏
+            @Suppress("DEPRECATION")
+            w.decorView.systemUiVisibility = (
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                )
         }
         val scrim = d.findViewById<android.view.View>(R.id.playlist_scrim)
         scrim.setOnClickListener { d.dismiss() }
-        d.setOnDismissListener { setControlsVisible(true) }
+        d.setOnDismissListener {
+            setControlsVisible(true)
+            @Suppress("DEPRECATION")
+            window?.decorView?.systemUiVisibility = (
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                )
+        }
+        d.setOnShowListener {
+            @Suppress("DEPRECATION")
+            d.window?.decorView?.systemUiVisibility = (
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                )
+        }
         setControlsVisible(false)
         // 面板宽度 = 屏幕 55%，右对齐
         val dm = android.util.DisplayMetrics()
         resources.displayMetrics.let { dm.setTo(it) }
+        PlayerTheme.applyBackground(d.findViewById(R.id.playlist_panel))
         d.findViewById<android.view.View>(R.id.playlist_panel)?.layoutParams?.let { lp ->
             lp.width = (dm.widthPixels * 0.55f).toInt()
             d.findViewById<android.view.View>(R.id.playlist_panel)?.layoutParams = lp
@@ -758,6 +1019,29 @@ class MpvPlayerActivity : AppCompatActivity() {
                     updateSpeedButton()
                 },
                 getSpeed = { normalSpeed },
+                onRepeatModeChanged = { applyRepeatMode(it) },
+                onPanModeChanged = { enabled ->
+                    panZoomEnabled = enabled
+                    if (!enabled) resetPanZoom()
+                },
+                onFrameStepChanged = { enabled ->
+                    frameStepEnabled = enabled
+                    updateFrameStepButtons()
+                    Toast.makeText(
+                        this,
+                        if (enabled) "帧步进开启：导出帧左侧显示逐帧按钮" else "帧步进关闭：隐藏逐帧按钮",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+                onAutoHideChanged = { enabled, seconds ->
+                    autoHideEnabled = enabled
+                    autoHideSeconds = seconds
+                    scheduleAutoHide()
+                },
+                onThemeOpacityChanged = {
+                    PlayerTheme.applyBackground(binding.topPanel)
+                    PlayerTheme.applyBackground(binding.controls)
+                },
                 onClosed = { setControlsVisible(true) },
             )
         }
@@ -765,27 +1049,45 @@ class MpvPlayerActivity : AppCompatActivity() {
         settingsPanel?.show()
     }
 
-    /** 常驻倍速选择：0.25 步进 + 常用倍速快捷，应用到当前和后续视频 */
+    /** 常驻倍速选择：深色弹窗 + 0.25 步进滑块 + 常用倍速快捷，应用到当前和后续视频 */
     private fun showNormalSpeedDialog() {
-        val view = android.view.LayoutInflater.from(this).inflate(R.layout.dialog_speed_control, null)
-        val d = AlertDialog.Builder(this)
-            .setTitle(R.string.player_speed_title)
-            .setView(view)
-            .setNegativeButton("取消", null)
-            .create()
+        val view = android.view.LayoutInflater.from(this).inflate(R.layout.dialog_mpv_speed, null)
+        val d = Dialog(this, R.style.MpvSettingsDialog)
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        d.setContentView(view)
+        val dm = android.util.DisplayMetrics()
+        resources.displayMetrics.let { dm.setTo(it) }
+        d.window?.let { w ->
+            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+            w.setDimAmount(0f)
+            // 播放页是沉浸式的，弹窗窗口默认会带出状态栏，这里同步隐藏
+            @Suppress("DEPRECATION")
+            w.decorView.systemUiVisibility = (
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                )
+        }
+        view.findViewById<android.view.View>(R.id.speed_panel)?.layoutParams?.let { lp ->
+            lp.width = minOf((dm.widthPixels * 0.84f).toInt(), (340 * dm.density).toInt())
+            view.findViewById<android.view.View>(R.id.speed_panel)?.layoutParams = lp
+        }
+        PlayerTheme.applyBackground(view.findViewById(R.id.speed_panel))
+        view.findViewById<android.view.View>(R.id.speed_scrim)?.setOnClickListener { d.dismiss() }
 
         // 与透明设置面板一致的 0.25 步进：index 0=0.25x .. 39=10.0x
         val step = 0.25f
         val maxIdx = 39
-        val ticks = floatArrayOf(0.5f, 1.0f, 1.75f, 2.0f, 10.0f)
-        val tickIds = listOf(R.id.speed_tick_0, R.id.speed_tick_1, R.id.speed_tick_2, R.id.speed_tick_3, R.id.speed_tick_4)
         val presets = floatArrayOf(0.3f, 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f)
         val presetIds = listOf(
-            R.id.speed_preset_0, R.id.speed_preset_1, R.id.speed_preset_2, R.id.speed_preset_3,
-            R.id.speed_preset_4, R.id.speed_preset_5, R.id.speed_preset_6,
+            R.id.dlg_speed_preset_0, R.id.dlg_speed_preset_1, R.id.dlg_speed_preset_2, R.id.dlg_speed_preset_3,
+            R.id.dlg_speed_preset_4, R.id.dlg_speed_preset_5, R.id.dlg_speed_preset_6,
         )
-        val seek = view.findViewById<android.widget.SeekBar>(R.id.speed_seek)
-        val tvValue = view.findViewById<TextView>(R.id.speed_value)
+        val seek = view.findViewById<android.widget.SeekBar>(R.id.dlg_speed_seek)
+        val tvValue = view.findViewById<TextView>(R.id.dlg_speed_value)
 
         fun applyValue(sp: Float, idx: Int) {
             val i = idx.coerceIn(0, maxIdx)
@@ -795,15 +1097,10 @@ class MpvPlayerActivity : AppCompatActivity() {
             SettingsRepository.normalSpeed = sp
             if (!isLongPressBoost) mpv?.setPropertyDouble("speed", sp.toDouble())
             updateSpeedButton()
-            tickIds.forEachIndexed { ti, id ->
-                val tv = view.findViewById<TextView>(id) ?: return@forEachIndexed
-                val hit = kotlin.math.abs(sp - ticks[ti]) < 0.01f
-                tv.setTextColor(if (hit) getColor(R.color.player_accent) else getColor(R.color.player_control_text_dim))
-            }
             presetIds.forEachIndexed { pi, id ->
                 val tv = view.findViewById<TextView>(id) ?: return@forEachIndexed
-                val hit = kotlin.math.abs(sp - presets[pi]) < 0.01f
-                tv.setTextColor(if (hit) getColor(R.color.player_accent) else getColor(R.color.player_control_text))
+                val hit = abs(sp - presets[pi]) < 0.01f
+                tv.setTextColor(if (hit) getColor(R.color.player_accent) else Color.WHITE)
             }
         }
         fun apply(idx: Int) {
@@ -818,10 +1115,36 @@ class MpvPlayerActivity : AppCompatActivity() {
             override fun onStartTrackingTouch(s: android.widget.SeekBar?) {}
             override fun onStopTrackingTouch(s: android.widget.SeekBar?) {}
         })
-        view.findViewById<android.view.View>(R.id.speed_minus).setOnClickListener { apply(seek.progress - 1) }
-        view.findViewById<android.view.View>(R.id.speed_plus).setOnClickListener { apply(seek.progress + 1) }
-        tickIds.forEachIndexed { i, id -> view.findViewById<android.view.View>(id)?.setOnClickListener { applyValue(ticks[i], (ticks[i] / step).roundToInt() - 1) } }
-        presetIds.forEachIndexed { i, id -> view.findViewById<android.view.View>(id)?.setOnClickListener { applyValue(presets[i], (presets[i] / step).roundToInt() - 1) } }
+        view.findViewById<android.view.View>(R.id.dlg_speed_minus).setOnClickListener { apply(seek.progress - 1) }
+        view.findViewById<android.view.View>(R.id.dlg_speed_plus).setOnClickListener { apply(seek.progress + 1) }
+        presetIds.forEachIndexed { i, id ->
+            view.findViewById<android.view.View>(id)?.setOnClickListener {
+                applyValue(presets[i], (presets[i] / step).roundToInt() - 1)
+            }
+        }
+        view.findViewById<android.view.View>(R.id.dlg_speed_done)?.setOnClickListener { d.dismiss() }
+        d.setOnDismissListener {
+            @Suppress("DEPRECATION")
+            window?.decorView?.systemUiVisibility = (
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                )
+        }
+        d.setOnShowListener {
+            @Suppress("DEPRECATION")
+            d.window?.decorView?.systemUiVisibility = (
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                )
+        }
         d.show()
     }
 
@@ -1095,6 +1418,7 @@ class MpvPlayerActivity : AppCompatActivity() {
         saveProgress(posMs, durMs)
         handler.removeCallbacks(ticker)
         handler.removeCallbacks(hideGestureFeedbackRunnable)
+        handler.removeCallbacks(autoHideRunnable)
         tickerPosted = false
         // 先停播放再 destroy，避免 mpv 内部线程仍在读 HTTP 流时句柄被 proxy 关闭
         mpv?.let { runCatching { it.command(arrayOf("set", "pause", "yes")); it.command(arrayOf("stop")) } }

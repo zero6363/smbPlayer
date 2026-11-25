@@ -1,0 +1,816 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 竖屏设置菜单：参考 reex 竖屏布局
+     - 全宽底部半透明面板（高度由代码按屏幕比例设置）
+     - 顶部功能图标横排（图标 + 文字），每行 4 个
+     - 下方按分组：左侧灰色组名 + 全宽分隔线 + 铺开的选项
+     - 倍速为 数值 + 滑块 + 常用倍速快捷（不再放参考刻度，避免和快捷栏重复） -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- 面板以上的视频区域：透明，点击关闭 -->
+    <View
+        android:id="@+id/settings_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#00000000" />
+
+    <LinearLayout
+        android:id="@+id/settings_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#FF000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:orientation="vertical"
+        android:paddingTop="6dp"
+        android:paddingBottom="8dp">
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:fillViewport="true"
+            android:overScrollMode="never"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- 顶部功能图标：图标 + 文字横排，每行 4 个 -->
+                <GridLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:alignmentMode="alignMargins"
+                    android:columnCount="4"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:rowCount="1"
+                    android:useDefaultMargins="false">
+
+                    <LinearLayout
+                        android:id="@+id/tile_hwdec"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_columnWeight="1"
+                        android:layout_gravity="fill"
+                        android:contentDescription="硬件解码"
+                        android:foreground="?attr/selectableItemBackgroundBorderless"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingStart="4dp"
+                        android:paddingEnd="2dp">
+
+                        <ImageView
+                            android:layout_width="22dp"
+                            android:layout_height="22dp"
+                            android:src="@drawable/ic_hwdec"
+                            app:tint="@color/player_control_text" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:maxLines="1"
+                            android:text="硬件解码"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/tile_mirror"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_columnWeight="1"
+                        android:layout_gravity="fill"
+                        android:contentDescription="镜像反转"
+                        android:foreground="?attr/selectableItemBackgroundBorderless"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingStart="4dp"
+                        android:paddingEnd="2dp">
+
+                        <ImageView
+                            android:layout_width="22dp"
+                            android:layout_height="22dp"
+                            android:src="@drawable/ic_mirror"
+                            app:tint="@color/player_control_text" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:maxLines="1"
+                            android:text="镜像反转"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/tile_background"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_columnWeight="1"
+                        android:layout_gravity="fill"
+                        android:contentDescription="后台播放"
+                        android:foreground="?attr/selectableItemBackgroundBorderless"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingStart="4dp"
+                        android:paddingEnd="2dp">
+
+                        <ImageView
+                            android:layout_width="22dp"
+                            android:layout_height="22dp"
+                            android:src="@drawable/ic_background_play"
+                            app:tint="@color/player_control_text" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:maxLines="1"
+                            android:text="后台播放"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/tile_pan"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_columnWeight="1"
+                        android:layout_gravity="fill"
+                        android:contentDescription="缩放平移"
+                        android:foreground="?attr/selectableItemBackgroundBorderless"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingStart="4dp"
+                        android:paddingEnd="2dp">
+
+                        <ImageView
+                            android:layout_width="22dp"
+                            android:layout_height="22dp"
+                            android:src="@drawable/ic_pan_scan"
+                            app:tint="@color/player_control_text" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:maxLines="1"
+                            android:text="缩放平移"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+
+                </GridLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="#26FFFFFF" />
+
+                <!-- 倍速 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingStart="18dp"
+                    android:paddingTop="5dp"
+                    android:paddingEnd="12dp"
+                    android:paddingBottom="4dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="倍速"
+                        android:textColor="@color/player_control_text_secondary"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/tv_speed_value"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="1.00"
+                        android:textColor="@color/player_control_text"
+                        android:textSize="15sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="2dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/speed_minus"
+                            android:layout_width="40dp"
+                            android:layout_height="match_parent"
+                            android:gravity="center"
+                            android:text="−"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="22sp" />
+
+                        <SeekBar
+                            android:id="@+id/seek_speed"
+                            android:layout_width="0dp"
+                            android:layout_height="28dp"
+                            android:layout_weight="1"
+                            android:max="39"
+                            android:progress="3"
+                            android:progressDrawable="@drawable/bg_seek_progress"
+                            android:splitTrack="false"
+                            android:thumb="@drawable/bg_seek_thumb" />
+
+                        <TextView
+                            android:id="@+id/speed_plus"
+                            android:layout_width="40dp"
+                            android:layout_height="match_parent"
+                            android:gravity="center"
+                            android:text="+"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="20sp" />
+                    </LinearLayout>
+
+                    <!-- 常用倍速快捷（紧贴滑块下方，选中项蓝色文字） -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="30dp"
+                        android:layout_marginTop="4dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/speed_preset_0"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_marginEnd="2dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_hint_pill"
+                            android:gravity="center"
+                            android:text="0.3x"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="11sp" />
+
+                        <TextView
+                            android:id="@+id/speed_preset_1"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_marginEnd="2dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_hint_pill"
+                            android:gravity="center"
+                            android:text="0.5x"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="11sp" />
+
+                        <TextView
+                            android:id="@+id/speed_preset_2"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_marginEnd="2dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_hint_pill"
+                            android:gravity="center"
+                            android:text="1x"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="11sp" />
+
+                        <TextView
+                            android:id="@+id/speed_preset_3"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_marginEnd="2dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_hint_pill"
+                            android:gravity="center"
+                            android:text="1.5x"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="11sp" />
+
+                        <TextView
+                            android:id="@+id/speed_preset_4"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_marginEnd="2dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_hint_pill"
+                            android:gravity="center"
+                            android:text="2x"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="11sp" />
+
+                        <TextView
+                            android:id="@+id/speed_preset_5"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_marginEnd="2dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_hint_pill"
+                            android:gravity="center"
+                            android:text="3x"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="11sp" />
+
+                        <TextView
+                            android:id="@+id/speed_preset_6"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_hint_pill"
+                            android:gravity="center"
+                            android:text="4x"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+                </LinearLayout>
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="18dp"
+                    android:layout_marginEnd="18dp"
+                    android:background="#26FFFFFF" />
+
+                <!-- 字幕：自动加载 + 字幕样式入口 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingStart="18dp"
+                    android:paddingTop="8dp"
+                    android:paddingEnd="18dp"
+                    android:paddingBottom="4dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="字幕"
+                        android:textColor="@color/player_control_text_secondary"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="自动加载字幕"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+
+                        <Switch
+                            android:id="@+id/switch_auto_sub"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:showText="false"
+                            android:thumbTint="@color/player_accent"
+                            android:trackTint="#55FFFFFF" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/row_sub_style"
+                        android:layout_width="match_parent"
+                        android:layout_height="42dp"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="字幕样式"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/tv_sub_style_summary"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="4dp"
+                            android:text="默认 · 55"
+                            android:textColor="@color/player_control_text_secondary"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="›"
+                            android:textColor="@color/player_control_text_secondary"
+                            android:textSize="16sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="18dp"
+                    android:layout_marginEnd="18dp"
+                    android:background="#26FFFFFF" />
+
+                <!-- 循环 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingStart="18dp"
+                    android:paddingTop="5dp"
+                    android:paddingEnd="12dp"
+                    android:paddingBottom="5dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="循环"
+                        android:textColor="@color/player_control_text_secondary"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:id="@+id/group_repeat"
+                        android:layout_width="match_parent"
+                        android:layout_height="30dp"
+                        android:layout_marginTop="2dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/repeat_one"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:contentDescription="单曲"
+                            android:gravity="start|center_vertical"
+                            android:text="单曲"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/repeat_all"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:contentDescription="顺序"
+                            android:gravity="center"
+                            android:text="顺序"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/repeat_shuffle"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:contentDescription="随机"
+                            android:gravity="center"
+                            android:text="随机"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+                        <TextView
+                            android:id="@+id/repeat_none"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:contentDescription="播完停止"
+                            android:gravity="end|center_vertical"
+                            android:text="播完停止"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="#26FFFFFF" />
+
+                <!-- 画面尺寸 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingStart="18dp"
+                    android:paddingTop="5dp"
+                    android:paddingEnd="12dp"
+                    android:paddingBottom="5dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="画面尺寸"
+                        android:textColor="@color/player_control_text_secondary"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="30dp"
+                        android:layout_marginTop="2dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/aspect_auto"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:contentDescription="自动"
+                            android:gravity="center"
+                            android:text="自动"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+                        <TextView
+                            android:id="@+id/aspect_11"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:contentDescription="1:1"
+                            android:gravity="center"
+                            android:text="1:1"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/aspect_169"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:contentDescription="16:9"
+                            android:gravity="center"
+                            android:text="16:9"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="30dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/aspect_43"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:contentDescription="4:3"
+                            android:gravity="center"
+                            android:text="4:3"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+                        <TextView
+                            android:id="@+id/aspect_crop"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:contentDescription="裁剪"
+                            android:gravity="center"
+                            android:text="裁剪"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/aspect_noscale"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:contentDescription="禁用缩放"
+                            android:gravity="center"
+                            android:text="禁用缩放"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="#26FFFFFF" />
+
+                <!-- 播放行为：帧步进 / 自动隐藏界面（延迟可调） -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingStart="18dp"
+                    android:paddingTop="8dp"
+                    android:paddingEnd="18dp"
+                    android:paddingBottom="6dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="播放"
+                        android:textColor="@color/player_control_text_secondary"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="帧步进"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+
+                        <Switch
+                            android:id="@+id/switch_frame_step"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:showText="false"
+                            android:thumbTint="@color/player_accent"
+                            android:trackTint="#55FFFFFF" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="自动隐藏界面"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/tv_auto_hide_value"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="8dp"
+                            android:text="4s"
+                            android:textColor="@color/player_control_text_secondary"
+                            android:textSize="12sp" />
+
+                        <Switch
+                            android:id="@+id/switch_auto_hide"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:showText="false"
+                            android:thumbTint="@color/player_accent"
+                            android:trackTint="#55FFFFFF" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="32dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/tv_auto_hide_delay"
+                            android:layout_width="72dp"
+                            android:layout_height="wrap_content"
+                            android:text="隐藏延迟"
+                            android:textColor="@color/player_control_text_secondary"
+                            android:textSize="12sp" />
+
+                        <SeekBar
+                            android:id="@+id/seek_auto_hide"
+                            android:layout_width="0dp"
+                            android:layout_height="24dp"
+                            android:layout_weight="1"
+                            android:max="19"
+                            android:progress="3"
+                            android:progressDrawable="@drawable/bg_seek_progress"
+                            android:thumb="@drawable/bg_seek_thumb"
+                            android:splitTrack="false" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/row_hwdec"
+                        android:layout_width="match_parent"
+                        android:layout_height="42dp"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="硬件解码"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/tv_hwdec_mode"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="4dp"
+                            android:text="no"
+                            android:textColor="@color/player_control_text_secondary"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="›"
+                            android:textColor="@color/player_control_text_secondary"
+                            android:textSize="16sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="18dp"
+                    android:layout_marginEnd="18dp"
+                    android:background="#26FFFFFF" />
+
+                <!-- 定时器 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingStart="18dp"
+                    android:paddingTop="5dp"
+                    android:paddingEnd="12dp"
+                    android:paddingBottom="5dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="定时器"
+                        android:textColor="@color/player_control_text_secondary"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/tv_sleep"
+                        android:layout_width="match_parent"
+                        android:layout_height="30dp"
+                        android:contentDescription="定时关闭时间"
+                        android:gravity="center"
+                        android:text="00:00:00"
+                        android:textColor="@color/player_control_text"
+                        android:textSize="15sp" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="2dp"
+                    android:background="#26FFFFFF" />
+
+                <!-- 主题：背景透明度（和 reex 一样可拖动调整） -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingStart="18dp"
+                    android:paddingTop="10dp"
+                    android:paddingEnd="18dp"
+                    android:paddingBottom="6dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="主题"
+                        android:textColor="@color/player_control_text_secondary"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/tv_theme_opacity"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="背景透明度 0.78"
+                        android:textColor="@color/player_control_text"
+                        android:textSize="13sp" />
+
+                    <SeekBar
+                        android:id="@+id/seek_opacity"
+                        android:layout_width="match_parent"
+                        android:layout_height="30dp"
+                        android:layout_marginTop="2dp"
+                        android:max="100"
+                        android:progress="78"
+                        android:progressDrawable="@drawable/bg_seek_progress"
+                        android:thumb="@drawable/bg_seek_thumb"
+                        android:splitTrack="false" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </ScrollView>
+    </LinearLayout>
+</FrameLayout>
+
+

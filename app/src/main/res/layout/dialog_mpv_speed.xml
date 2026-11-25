@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 播放速度弹窗：深色面板 + 数值 + (− 滑块 +) + 常用倍速快捷，0.25 步进 0.25x~10.0x -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <View
+        android:id="@+id/speed_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000" />
+
+    <LinearLayout
+        android:id="@+id/speed_panel"
+        android:layout_width="340dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_dialog_panel"
+        android:clickable="true"
+        android:focusable="true"
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingTop="18dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="10dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="播放速度"
+            android:textColor="@color/player_control_text"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/dlg_speed_value"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="14dp"
+            android:text="1.00x"
+            android:textColor="@color/player_control_text"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:layout_marginTop="10dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/dlg_speed_minus"
+                android:layout_width="40dp"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="−"
+                android:textColor="@color/player_control_text"
+                android:textSize="24sp" />
+
+            <SeekBar
+                android:id="@+id/dlg_speed_seek"
+                android:layout_width="0dp"
+                android:layout_height="28dp"
+                android:layout_weight="1"
+                android:max="39"
+                android:progress="3"
+                android:progressDrawable="@drawable/bg_seek_progress"
+                android:splitTrack="false"
+                android:thumb="@drawable/bg_seek_thumb" />
+
+            <TextView
+                android:id="@+id/dlg_speed_plus"
+                android:layout_width="40dp"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="+"
+                android:textColor="@color/player_control_text"
+                android:textSize="22sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <TextView android:id="@+id/dlg_speed_preset_0" android:layout_width="0dp" android:layout_height="match_parent" android:layout_marginEnd="2dp" android:layout_weight="1" android:background="@drawable/bg_hint_pill" android:gravity="center" android:text="0.3x" android:textColor="@color/player_control_text" android:textSize="13sp" />
+            <TextView android:id="@+id/dlg_speed_preset_1" android:layout_width="0dp" android:layout_height="match_parent" android:layout_marginEnd="2dp" android:layout_weight="1" android:background="@drawable/bg_hint_pill" android:gravity="center" android:text="0.5x" android:textColor="@color/player_control_text" android:textSize="13sp" />
+            <TextView android:id="@+id/dlg_speed_preset_2" android:layout_width="0dp" android:layout_height="match_parent" android:layout_marginEnd="2dp" android:layout_weight="1" android:background="@drawable/bg_hint_pill" android:gravity="center" android:text="1x" android:textColor="@color/player_control_text" android:textSize="13sp" />
+            <TextView android:id="@+id/dlg_speed_preset_3" android:layout_width="0dp" android:layout_height="match_parent" android:layout_marginEnd="2dp" android:layout_weight="1" android:background="@drawable/bg_hint_pill" android:gravity="center" android:text="1.5x" android:textColor="@color/player_control_text" android:textSize="13sp" />
+            <TextView android:id="@+id/dlg_speed_preset_4" android:layout_width="0dp" android:layout_height="match_parent" android:layout_marginEnd="2dp" android:layout_weight="1" android:background="@drawable/bg_hint_pill" android:gravity="center" android:text="2x" android:textColor="@color/player_control_text" android:textSize="13sp" />
+            <TextView android:id="@+id/dlg_speed_preset_5" android:layout_width="0dp" android:layout_height="match_parent" android:layout_marginEnd="2dp" android:layout_weight="1" android:background="@drawable/bg_hint_pill" android:gravity="center" android:text="3x" android:textColor="@color/player_control_text" android:textSize="13sp" />
+            <TextView android:id="@+id/dlg_speed_preset_6" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="@drawable/bg_hint_pill" android:gravity="center" android:text="4x" android:textColor="@color/player_control_text" android:textSize="13sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/dlg_speed_done"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_gravity="end"
+            android:layout_marginTop="4dp"
+            android:gravity="center"
+            android:minWidth="64dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:text="完成"
+            android:textColor="@color/player_accent"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+</FrameLayout>

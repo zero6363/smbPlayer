@@ -24,6 +24,20 @@ object SettingsRepository {
     private const val KEY_ZONE_VOLUME_BRIGHTNESS = "zone_volume_brightness"
     private const val KEY_SHOW_IMAGES = "show_images"
     private const val KEY_SHOW_OTHER_FILES = "show_other_files"
+    private const val KEY_UI_OPACITY = "ui_background_opacity"
+    private const val KEY_FRAME_STEP = "frame_step_enabled"
+    private const val KEY_AUTO_HIDE = "auto_hide_controls"
+    private const val KEY_AUTO_HIDE_SECONDS = "auto_hide_seconds"
+    private const val KEY_AUTO_LOAD_SUBS = "auto_load_subtitles"
+    private const val KEY_SUB_FONT = "subtitle_font"
+    private const val KEY_SUB_FONT_SIZE = "subtitle_font_size"
+    private const val KEY_SUB_COLOR = "subtitle_color"
+    private const val KEY_SUB_BORDER_COLOR = "subtitle_border_color"
+    private const val KEY_SUB_BORDER_SIZE = "subtitle_border_size"
+    private const val KEY_SUB_BOLD = "subtitle_bold"
+    private const val KEY_SUB_ITALIC = "subtitle_italic"
+    private const val KEY_SUB_IGNORE_ASS = "subtitle_ignore_ass"
+    private const val KEY_HWDEC = "hwdec_mode"
 
     /** 首页播放记录：默认显示、默认最多 12 条 */
     const val DEFAULT_HISTORY_COUNT = 12
@@ -79,6 +93,102 @@ object SettingsRepository {
         get() = store().getFloat(KEY_NORMAL_SPEED, 1.0f)
         set(value) {
             store().edit().putFloat(KEY_NORMAL_SPEED, value).apply()
+        }
+
+    /** 设置面板与控制栏的背景不透明度（reex 的「背景透明度」，1.0 = 原始不透明） */
+    var uiBackgroundOpacity: Float
+        get() = store().getFloat(KEY_UI_OPACITY, 0.78f)
+        set(value) {
+            store().edit().putFloat(KEY_UI_OPACITY, value.coerceIn(0.1f, 1.0f)).apply()
+        }
+
+    /** 帧步进：开启后在导出帧左侧显示逐帧后退/前进按钮，快退/快进保持秒级跳转 */
+    var frameStepEnabled: Boolean
+        get() = store().getBoolean(KEY_FRAME_STEP, false)
+        set(value) {
+            store().edit().putBoolean(KEY_FRAME_STEP, value).apply()
+        }
+
+    /** 控制栏/顶部菜单自动隐藏，默认开启 */
+    var autoHideControls: Boolean
+        get() = store().getBoolean(KEY_AUTO_HIDE, true)
+        set(value) {
+            store().edit().putBoolean(KEY_AUTO_HIDE, value).apply()
+        }
+
+    /** 自动隐藏延迟秒数，默认 4 秒（reex 默认 4s） */
+    var autoHideSeconds: Int
+        get() = store().getInt(KEY_AUTO_HIDE_SECONDS, 4)
+        set(value) {
+            store().edit().putInt(KEY_AUTO_HIDE_SECONDS, value.coerceIn(1, 20)).apply()
+        }
+
+    /** 自动加载同名字幕：默认开启（播放时自动找 srt/ass/ssa/vtt） */
+    var autoLoadSubtitles: Boolean
+        get() = store().getBoolean(KEY_AUTO_LOAD_SUBS, true)
+        set(value) {
+            store().edit().putBoolean(KEY_AUTO_LOAD_SUBS, value).apply()
+        }
+
+    /** 字幕字体：default / sans / serif / mono */
+    var subtitleFont: String
+        get() = store().getString(KEY_SUB_FONT, "default") ?: "default"
+        set(value) {
+            store().edit().putString(KEY_SUB_FONT, value).apply()
+        }
+
+    /** 字幕字号（reex 默认 55） */
+    var subtitleFontSize: Int
+        get() = store().getInt(KEY_SUB_FONT_SIZE, 55)
+        set(value) {
+            store().edit().putInt(KEY_SUB_FONT_SIZE, value.coerceIn(24, 120)).apply()
+        }
+
+    /** 字幕字体颜色 #RRGGBB */
+    var subtitleColor: String
+        get() = store().getString(KEY_SUB_COLOR, "#FFFFFF") ?: "#FFFFFF"
+        set(value) {
+            store().edit().putString(KEY_SUB_COLOR, value).apply()
+        }
+
+    /** 字幕边框颜色 #RRGGBB */
+    var subtitleBorderColor: String
+        get() = store().getString(KEY_SUB_BORDER_COLOR, "#000000") ?: "#000000"
+        set(value) {
+            store().edit().putString(KEY_SUB_BORDER_COLOR, value).apply()
+        }
+
+    /** 字幕边框粗细，reex 默认 3 */
+    var subtitleBorderSize: Int
+        get() = store().getInt(KEY_SUB_BORDER_SIZE, 3)
+        set(value) {
+            store().edit().putInt(KEY_SUB_BORDER_SIZE, value.coerceIn(0, 10)).apply()
+        }
+
+    var subtitleBold: Boolean
+        get() = store().getBoolean(KEY_SUB_BOLD, false)
+        set(value) {
+            store().edit().putBoolean(KEY_SUB_BOLD, value).apply()
+        }
+
+    var subtitleItalic: Boolean
+        get() = store().getBoolean(KEY_SUB_ITALIC, false)
+        set(value) {
+            store().edit().putBoolean(KEY_SUB_ITALIC, value).apply()
+        }
+
+    /** 忽略 ASS 样式：开启后用上面的字体/颜色/边框强制覆盖 ASS 字幕 */
+    var subtitleIgnoreAss: Boolean
+        get() = store().getBoolean(KEY_SUB_IGNORE_ASS, false)
+        set(value) {
+            store().edit().putBoolean(KEY_SUB_IGNORE_ASS, value).apply()
+        }
+
+    /** 硬件解码：no / auto / mediacodec-copy（默认 no，保证当前 AAR 兼容性） */
+    var hwdecMode: String
+        get() = store().getString(KEY_HWDEC, "no") ?: "no"
+        set(value) {
+            store().edit().putString(KEY_HWDEC, value).apply()
         }
 
     /**
