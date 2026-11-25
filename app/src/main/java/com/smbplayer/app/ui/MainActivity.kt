@@ -62,6 +62,15 @@ class MainActivity : AppCompatActivity() {
         binding.recycler.layoutManager = LinearLayoutManager(this)
         binding.recycler.adapter = adapter
 
+        binding.swipeRefresh.setColorSchemeResources(R.color.primary, R.color.primary_dark)
+        binding.swipeRefresh.setOnRefreshListener {
+            refresh()
+            // 首页是本地数据，刷新很快；保留一小段指示器时间，避免下拉后没有任何反馈
+            binding.swipeRefresh.postDelayed({
+                binding.swipeRefresh.isRefreshing = false
+            }, 300L)
+        }
+
         favoriteAdapter = FavoriteAdapter(
             onClick = { openFavorite(it) },
             onLongClick = { confirmDeleteFavorite(it) },

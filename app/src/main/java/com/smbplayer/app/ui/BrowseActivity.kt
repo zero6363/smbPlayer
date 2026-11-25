@@ -163,6 +163,9 @@ class BrowseActivity : AppCompatActivity() {
         binding.recycler.layoutManager = layoutManager
         binding.recycler.adapter = adapter
 
+        binding.swipeRefresh.setColorSchemeResources(R.color.primary, R.color.primary_dark)
+        binding.swipeRefresh.setOnRefreshListener { loadDirectory() }
+
         binding.btnSelectAll.setOnClickListener { adapter.selectAll() }
         binding.btnCancelSelection.setOnClickListener { adapter.clearSelection() }
         binding.btnDeleteSelected.setOnClickListener { confirmDeleteSelected() }
@@ -437,8 +440,12 @@ class BrowseActivity : AppCompatActivity() {
     }
 
     private fun loadDirectory() {
-        if (shareName.isBlank()) return
-        showLoading(true)
+        if (shareName.isBlank()) {
+            binding.swipeRefresh.isRefreshing = false
+            return
+        }
+        val fromPull = binding.swipeRefresh.isRefreshing
+        if (!fromPull) showLoading(true)
         binding.emptyView.visibility = View.GONE
         lifecycleScope.launch {
             try {
@@ -453,6 +460,7 @@ class BrowseActivity : AppCompatActivity() {
                 )
                 adapter.submit(entries, progressByName(entries))
                 showLoading(false)
+                binding.swipeRefresh.isRefreshing = false
                 logInfo("目录加载完成: ${list.size} 项")
                 updateHeader(list)
                 // 有恢复目标（从视频/子目录返回）时回到上次位置；否则首次打开一律从顶部开始，
@@ -463,6 +471,7 @@ class BrowseActivity : AppCompatActivity() {
                     applyPendingRestore(list)
                 }
             } catch (e: CancellationException) {
+                binding.swipeRefresh.isRefreshing = false
                 throw e // 用户离开页面：正常取消，静默结束
             } catch (e: Exception) {
                 showLoading(false)
@@ -475,6 +484,7 @@ class BrowseActivity : AppCompatActivity() {
                     loadDirectory()
                     return@launch
                 }
+                binding.swipeRefresh.isRefreshing = false
                 showError(e)
             }
         }
@@ -560,9 +570,11 @@ class BrowseActivity : AppCompatActivity() {
     private fun updateSelectionBar(count: Int) {
         if (count <= 0) {
             binding.selectionBar.visibility = View.GONE
+            binding.swipeRefresh.isEnabled = true
             return
         }
         binding.selectionBar.visibility = View.VISIBLE
+        binding.swipeRefresh.isEnabled = false
         binding.tvSelectedCount.text = getString(R.string.selected_count, count)
     }
 
