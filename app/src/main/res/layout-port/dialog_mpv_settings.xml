@@ -613,6 +613,42 @@
                         android:textSize="13sp" />
 
                     <LinearLayout
+                        android:id="@+id/row_seek_step"
+                        android:layout_width="match_parent"
+                        android:layout_height="42dp"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:contentDescription="快退快进间隔"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="快退 / 快进间隔"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/tv_seek_step"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="4dp"
+                            android:text="5 秒 · 关键帧"
+                            android:textColor="@color/player_control_text_secondary"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="›"
+                            android:textColor="@color/player_control_text_secondary"
+                            android:textSize="16sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="40dp"
                         android:gravity="center_vertical"
@@ -628,6 +664,52 @@
 
                         <Switch
                             android:id="@+id/switch_frame_step"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:showText="false"
+                            android:thumbTint="@color/player_accent"
+                            android:trackTint="#55FFFFFF" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="快退 / 快进按钮"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+
+                        <Switch
+                            android:id="@+id/switch_seek_buttons"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:showText="false"
+                            android:thumbTint="@color/player_accent"
+                            android:trackTint="#55FFFFFF" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="上一个 / 下一个按钮"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+
+                        <Switch
+                            android:id="@+id/switch_prev_next_buttons"
                             android:layout_width="wrap_content"
                             android:layout_height="36dp"
                             android:showText="false"

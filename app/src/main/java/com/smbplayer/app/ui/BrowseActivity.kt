@@ -151,6 +151,10 @@ class BrowseActivity : AppCompatActivity() {
                     showSortDialog()
                     true
                 }
+                R.id.action_settings -> {
+                    startActivity(SettingsActivity.intent(this))
+                    true
+                }
                 else -> false
             }
         }
@@ -194,8 +198,10 @@ class BrowseActivity : AppCompatActivity() {
         } else {
             // 从收藏路径直达时，恢复上次浏览位置；
             // 没有收藏路径时，用服务器配置里粘贴完整路径解析出的直达目录
-            val startPath = intent.getStringExtra(EXTRA_START_PATH)?.takeIf { it.isNotEmpty() }
-                ?: server.startPath
+            val rawStartPath = intent.getStringExtra(EXTRA_START_PATH)
+            val exactStartPath = intent.getBooleanExtra(EXTRA_EXACT_START_PATH, false)
+            val startPath = if (exactStartPath) rawStartPath.orEmpty()
+            else rawStartPath?.takeIf { it.isNotEmpty() } ?: server.startPath
             // 共享名优先用收藏时记录的那个（服务器配置里可能已清空）；
             // 收藏的是共享根本身（path 为空）时也一样要用
             val favoriteShare = intent.getStringExtra(EXTRA_START_SHARE)?.takeIf { it.isNotBlank() }
@@ -923,6 +929,8 @@ class BrowseActivity : AppCompatActivity() {
         private const val EXTRA_SERVER_ID = "extra_server_id"
         private const val EXTRA_START_PATH = "extra_start_path"
         private const val EXTRA_START_SHARE = "extra_start_share"
+        /** true：startPath 就按传入值使用（空串代表共享根），不再回落到 server.startPath */
+        private const val EXTRA_EXACT_START_PATH = "extra_exact_start_path"
 
         /** 重建时保存当前浏览位置（夜间模式切换等） */
         private const val STATE_SHARE = "state_share"
@@ -933,10 +941,12 @@ class BrowseActivity : AppCompatActivity() {
             serverId: String,
             startPath: String = "",
             startShare: String = "",
+            exactStartPath: Boolean = false,
         ): Intent =
             Intent(context, BrowseActivity::class.java)
                 .putExtra(EXTRA_SERVER_ID, serverId)
                 .putExtra(EXTRA_START_PATH, startPath)
                 .putExtra(EXTRA_START_SHARE, startShare)
+                .putExtra(EXTRA_EXACT_START_PATH, exactStartPath)
     }
 }

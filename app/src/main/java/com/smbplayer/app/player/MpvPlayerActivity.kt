@@ -24,7 +24,6 @@ import android.view.Window
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -44,6 +43,7 @@ import com.smbplayer.app.data.VideoFormats
 import com.smbplayer.app.databinding.ActivityMpvPlayerBinding
 import com.smbplayer.app.smb.SmbGateway
 import com.smbplayer.app.smb.SmbSession
+import com.smbplayer.app.ui.BrowseActivity
 import com.smbplayer.app.util.joinPath
 import com.smbplayer.app.util.sanitizeFileName
 import dev.jdtech.mpv.MPVLib
@@ -73,14 +73,26 @@ class MpvPlayerActivity : AppCompatActivity() {
     private var currentIndex = 0
     private var currentToken: String? = null
     private var currentPath = ""
+    /** 每次 loadCurrent 递增，新一轮加载会丢弃还在路上的旧 register 结果 */
+    private var loadGeneration = 0
+    /** 新文件是否已经输出首帧；加载圈只在首帧后隐藏，避免黑屏时过早消失 */
+    private var videoReady = false
+    private var loadStartedMs = 0L
+    /** 当前真正交给 mpv 播放的路径；进度保存用它，避免切换时旧位置写到新文件上 */
+    private var playbackPath = ""
+    private var pendingPlaybackPath = ""
     /** Surface 是否已 attach 到 mpv；loadfile 必须等它就绪，否则硬解拿不到 native_window */
     private var surfaceReady = false
+    /** Activity 是否已离开前台（Home/锁屏/被其它页面覆盖），此时 surface 销毁不能 detach */
+    private var windowInBackground = false
     /** surface 就绪前挂起的 loadfile 参数 */
     private var pendingLoad: Pair<String, Long>? = null
 
     private val handler = Handler(Looper.getMainLooper())
     private var tickerPosted = false
     private var lastSaveMs = 0L
+    /** 上一帧 ticker 看到的播放状态；用于暂停瞬间立刻落一次进度 */
+    private var lastPlaying: Boolean? = null
     private var controlsVisible = true
     private var seekingByUser = false
     /** 归档移动中，防止连点重复移动 */
@@ -144,6 +156,9 @@ class MpvPlayerActivity : AppCompatActivity() {
     private var repeatMode = 1
     /** 帧步进：开启后在导出帧按钮左侧显示逐帧后退/前进按钮，快退/快进仍保持秒级跳转 */
     private var frameStepEnabled = false
+    /** 播放页按钮开关：关闭后隐藏快退/快进、上一个/下一个按钮 */
+    private var showSeekButtons = true
+    private var showPrevNextButtons = true
     /** 控制栏自动隐藏（reex 默认 4s，可自定义） */
     private var autoHideEnabled = true
     private var autoHideSeconds = 4
@@ -182,6 +197,9 @@ class MpvPlayerActivity : AppCompatActivity() {
         binding.gestureFeedback.visibility = android.view.View.GONE
     }
 
+    /** seek 结束后延迟读取 time-pos，等 mpv 完成定位再落进度 */
+    private val saveAfterSeekRunnable = Runnable { saveCurrentProgress(explicit = true) }
+
     private val ticker = object : Runnable {
         override fun run() {
             if (destroyed) return
@@ -200,7 +218,7 @@ class MpvPlayerActivity : AppCompatActivity() {
                     if (!seekingByUser && durSec > 0.0) {
                         binding.seekBar.progress = (posSec / durSec * 1000).toInt().coerceIn(0, 1000)
                     }
-                    binding.loading.visibility = android.view.View.GONE
+                    binding.loading.visibility = if (videoReady) android.view.View.GONE else android.view.View.VISIBLE
                 }
                 binding.tvCurrent.text = formatTime(posMs)
                 // 定时关闭倒计时提醒（reex 风格，播放键右侧）
@@ -216,21 +234,13 @@ class MpvPlayerActivity : AppCompatActivity() {
                 // 播放图标随状态切换
                 val playing = runCatching { m.getPropertyBoolean("pause") }.getOrNull() == false
                 binding.btnPlayPause.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
-                // 单视频时隐藏上一个/下一个；多视频时到头置灰（与原版一致）
-                val multi = videoNames.size > 1
-                val prevVis = if (multi) android.view.View.VISIBLE else android.view.View.GONE
-                val nextVis = if (multi) android.view.View.VISIBLE else android.view.View.GONE
-                if (binding.btnPrevVideo.visibility != prevVis) binding.btnPrevVideo.visibility = prevVis
-                if (binding.btnNextVideo.visibility != nextVis) binding.btnNextVideo.visibility = nextVis
-                val hasPrev = currentIndex > 0
-                val hasNext = currentIndex + 1 < videoNames.size
-                binding.btnPrevVideo.isEnabled = hasPrev
-                binding.btnNextVideo.isEnabled = hasNext
-                binding.btnPrevVideo.alpha = if (hasPrev) 1f else 0.35f
-                binding.btnNextVideo.alpha = if (hasNext) 1f else 0.35f
+                // 从播放变为暂停时立刻保存，不等下一个 5 秒周期
+                if (lastPlaying == true && !playing) saveCurrentProgress()
+                lastPlaying = playing
+                // 多视频时显示上一个/下一个；到头置灰。开关关闭时整组隐藏
+                updatePrevNextButtons()
                 if (posMs - lastSaveMs >= 5_000L) {
-                    saveProgress(posMs, durMs)
-                    lastSaveMs = posMs
+                    saveCurrentProgress()
                 }
             }
             handler.postDelayed(this, 300L)
@@ -269,7 +279,7 @@ class MpvPlayerActivity : AppCompatActivity() {
             )
         } else {
             ServerRepository.get(serverId) ?: run {
-                Toast.makeText(this, "服务器配置不存在", Toast.LENGTH_SHORT).show()
+                PlayerToast.show(this, "服务器配置不存在")
                 finish()
                 return
             }
@@ -286,15 +296,23 @@ class MpvPlayerActivity : AppCompatActivity() {
         normalSpeed = SettingsRepository.normalSpeed
         zoneVolumeBrightnessEnabled = SettingsRepository.zoneVolumeBrightness
         frameStepEnabled = SettingsRepository.frameStepEnabled
+        showSeekButtons = SettingsRepository.showSeekButtons
+        showPrevNextButtons = SettingsRepository.showPrevNextButtons
         autoHideEnabled = SettingsRepository.autoHideControls
         autoHideSeconds = SettingsRepository.autoHideSeconds
         PlayerTheme.applyBackground(binding.topPanel)
         PlayerTheme.applyBackground(binding.controls)
+        PlayerTheme.applyBackground(binding.gestureFeedback)
         updateSpeedButton()
         setupControls()
         setupBackExit()
         initMpv()
         scheduleAutoHide()
+        // 旋转/重建前暂存的提示（Dialog Toast 无法跨 Activity 存活）
+        intent.getStringExtra(EXTRA_REBUILD_TOAST)?.let { msg ->
+            intent.removeExtra(EXTRA_REBUILD_TOAST)
+            binding.root.post { if (!destroyed) PlayerToast.show(this, msg) }
+        }
 
         // debug_url 模式：mpv 已在 initMpv 里加载，跳过 SMB 目录列举
         if (!intent.getStringExtra("debug_url").isNullOrEmpty()) return
@@ -356,14 +374,19 @@ class MpvPlayerActivity : AppCompatActivity() {
         binding.btnPlayPause.setOnClickListener {
             mpv?.command(arrayOf("cycle", "pause"))
         }
-        binding.btnRew.setOnClickListener { seekBy(-SEEK_STEP_MS) }
-        binding.btnFfwd.setOnClickListener { seekBy(SEEK_STEP_MS) }
+        binding.btnRew.setOnClickListener { seekBy(-seekStepMs()) }
+        binding.btnFfwd.setOnClickListener { seekBy(seekStepMs()) }
         binding.btnPrevVideo.setOnClickListener { switchVideo(currentIndex - 1) }
         binding.btnNextVideo.setOnClickListener { switchVideo(currentIndex + 1) }
+        binding.btnOpenFolder.setOnClickListener { openCurrentFolder() }
+        // debug 播放使用的临时 serverId 不在仓库里，BrowseActivity 无法定位；隐藏入口
+        binding.btnOpenFolder.visibility =
+            if (server.id == "mpv-debug") android.view.View.GONE else android.view.View.VISIBLE
         binding.btnFrameBack.setOnClickListener { stepFrame(-1) }
         binding.btnFrameForward.setOnClickListener { stepFrame(1) }
         binding.btnFrameSave.setOnClickListener { saveCurrentFrame() }
         updateFrameStepButtons()
+        applyControlButtonsVisibility()
         binding.timerBadge?.setOnClickListener { settingsPanel?.openTimerPicker() }
         binding.btnDelete.setOnClickListener { confirmDeleteCurrent() }
         binding.btnMove1.setOnClickListener { moveCurrentTo("1") }
@@ -377,7 +400,8 @@ class MpvPlayerActivity : AppCompatActivity() {
             val current = rotationIndex()
             val next = ROTATION_ORDER[(current + 1) % ROTATION_ORDER.size]
             requestedOrientation = next
-            Toast.makeText(this, rotationHint(next), Toast.LENGTH_SHORT).show()
+            // Dialog 形式的 Toast 会随旧 Activity 销毁，旋转提示写进 intent，重建后再显示
+            intent.putExtra(EXTRA_REBUILD_TOAST, rotationHint(next))
             // recreate() 会重建 Activity 并从 intent 重新读 index/targetName；
             // 必须先把「当前」切集状态写回 intent，否则旋转后会跳回最初进入时的那一集。
             intent.putExtra(EXTRA_INDEX, currentIndex)
@@ -393,6 +417,7 @@ class MpvPlayerActivity : AppCompatActivity() {
                 val p = (seekBar?.progress ?: 0) / 1000.0 * dur
                 mpv?.command(arrayOf("seek", p.toString(), "absolute"))
                 seekingByUser = false
+                scheduleProgressSave()
             }
         })
 
@@ -454,6 +479,32 @@ class MpvPlayerActivity : AppCompatActivity() {
         val visibility = if (frameStepEnabled) android.view.View.VISIBLE else android.view.View.GONE
         binding.btnFrameBack.visibility = visibility
         binding.btnFrameForward.visibility = visibility
+    }
+
+    /** 快退/快进、上一个/下一个按钮的显示开关；在 onCreate / onResume / 设置面板内切换后生效 */
+    private fun applyControlButtonsVisibility() {
+        showSeekButtons = SettingsRepository.showSeekButtons
+        showPrevNextButtons = SettingsRepository.showPrevNextButtons
+        val seekVisibility = if (showSeekButtons) android.view.View.VISIBLE else android.view.View.GONE
+        binding.btnRew.visibility = seekVisibility
+        binding.btnFfwd.visibility = seekVisibility
+        updatePrevNextButtons()
+    }
+
+    /** 多视频才显示上一个/下一个；开关关闭时整组隐藏；到头置灰 */
+    private fun updatePrevNextButtons() {
+        val visible = showPrevNextButtons && videoNames.size > 1
+        val visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+        if (binding.btnPrevVideo.visibility != visibility) binding.btnPrevVideo.visibility = visibility
+        if (binding.btnNextVideo.visibility != visibility) binding.btnNextVideo.visibility = visibility
+        if (!visible) return
+
+        val hasPrev = currentIndex > 0
+        val hasNext = currentIndex + 1 < videoNames.size
+        binding.btnPrevVideo.isEnabled = hasPrev
+        binding.btnNextVideo.isEnabled = hasNext
+        binding.btnPrevVideo.alpha = if (hasPrev) 1f else 0.35f
+        binding.btnNextVideo.alpha = if (hasNext) 1f else 0.35f
     }
 
     /** mpv 原生逐帧命令；执行后 mpv 会停在目标帧 */
@@ -573,6 +624,7 @@ class MpvPlayerActivity : AppCompatActivity() {
             val dur = ((runCatching { mpv?.getPropertyDouble("duration") }.getOrNull() ?: 0.0) * 1000).toLong()
             val target = if (dur > 0L) swipeTargetPositionMs.coerceIn(0L, dur) else swipeTargetPositionMs
             mpv?.command(arrayOf("seek", (target / 1000.0).toString(), "absolute"))
+            scheduleProgressSave()
         }
         gestureMode = GestureMode.NONE
         if (finished != GestureMode.NONE) {
@@ -716,7 +768,7 @@ class MpvPlayerActivity : AppCompatActivity() {
                     finish()
                 } else {
                     lastBackMs = now
-                    Toast.makeText(this@MpvPlayerActivity, "再按一次返回", Toast.LENGTH_SHORT).show()
+                    PlayerToast.show(this@MpvPlayerActivity, "再按一次返回")
                 }
             }
         })
@@ -760,11 +812,12 @@ class MpvPlayerActivity : AppCompatActivity() {
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
             override fun surfaceDestroyed(holder: SurfaceHolder) {
                 surfaceReady = false
-                // 关键：Activity 正在销毁/返回时不要 detachSurface——libmpv 的 vo 线程仍持有
+                // 关键：Activity 正在销毁/返回/切后台时不要 detachSurface——libmpv 的 vo 线程仍持有
                 // 这个 surface，detach 会把 native window 置 0，vo 线程随后断言 WinID!=0 失败
                 // 触发 SIGABRT，表现为「返回主页后过一会整个应用跳出」。
-                // 销毁路径交给 onDestroy 里的 mpv.destroy() 统一清理。
-                if (destroyed || isFinishing) return
+                // 销毁路径交给 onDestroy 里的 mpv.destroy() 统一清理；后台回来由新的
+                // surfaceCreated -> attachSurface 接管。
+                if (destroyed || isFinishing || windowInBackground) return
                 mpv?.detachSurface()
             }
         })
@@ -802,6 +855,19 @@ class MpvPlayerActivity : AppCompatActivity() {
             override fun eventProperty(property: String, value: String) {}
             override fun event(event: Int) {
                 if (destroyed) return // 销毁中忽略 mpv 内部线程的回调，避免延迟崩溃
+                if (event == MPVLib.MpvEvent.MPV_EVENT_VIDEO_RECONFIG) {
+                    if (!videoReady) {
+                        videoReady = true
+                        if (loadStartedMs > 0L) {
+                            android.util.Log.i(
+                                "MpvPlayer",
+                                "video output reconfigured after ${System.currentTimeMillis() - loadStartedMs} ms"
+                            )
+                        }
+                    }
+                    runOnUiThread { if (!destroyed) binding.loading.visibility = android.view.View.GONE }
+                    return
+                }
                 if (event == MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED) {
                     // 注意：不能在 mpv 的事件线程里同步调 mpv API，否则会死锁把 UI 一起卡住
                     handler.post {
@@ -810,6 +876,14 @@ class MpvPlayerActivity : AppCompatActivity() {
                                 "sid",
                                 if (SettingsRepository.autoLoadSubtitles) "1" else "no"
                             )
+                        }
+                        // 新文件真正加载完成后再切换进度归属，避免加载期间把旧 time-pos 存到新路径
+                        if (pendingPlaybackPath.isNotEmpty()) {
+                            playbackPath = pendingPlaybackPath
+                            pendingPlaybackPath = ""
+                            // 新文件的进度基准从 0 开始算，避免沿用旧文件较大的 lastSaveMs
+                            lastSaveMs = 0L
+                            lastPlaying = null
                         }
                     }
                     return
@@ -826,23 +900,36 @@ class MpvPlayerActivity : AppCompatActivity() {
                 when (repeatMode) {
                     1 -> if (videoNames.size > 1 && currentIndex < videoNames.lastIndex) {
                         runOnUiThread {
+                            if (destroyed) return@runOnUiThread
+                            saveCurrentProgress()
                             currentIndex++
                             loadCurrent()
                         }
+                    } else {
+                        runOnUiThread { if (!destroyed) saveCurrentProgress() }
                     }
                     2 -> if (videoNames.size > 1) {
                         val candidates = videoNames.indices.filter { it != currentIndex }
                         if (candidates.isNotEmpty()) {
                             runOnUiThread {
+                                if (destroyed) return@runOnUiThread
+                                saveCurrentProgress()
                                 currentIndex = candidates.random()
                                 loadCurrent()
                             }
+                        } else {
+                            runOnUiThread { if (!destroyed) saveCurrentProgress() }
                         }
                     }
                     0 -> if (videoNames.size == 1 || currentIndex in videoNames.indices) {
-                        runOnUiThread { if (!destroyed) loadCurrent() }
+                        runOnUiThread {
+                            if (destroyed) return@runOnUiThread
+                            saveCurrentProgress()
+                            loadCurrent()
+                        }
                     }
-                    else -> Unit // 播完停止：不自动下一个
+                    3 -> runOnUiThread { if (!destroyed) saveCurrentProgress() }
+                    else -> Unit
                 }
             }
         })
@@ -852,6 +939,7 @@ class MpvPlayerActivity : AppCompatActivity() {
         if (videoNames.isEmpty() || currentIndex !in videoNames.indices) return
         val m = mpv ?: return
         val name = videoNames[currentIndex]
+        val generation = ++loadGeneration
 
         // 调试：直接 HTTP 源，不经过 SMB 代理
         val debugUrl = intent.getStringExtra("debug_url")
@@ -875,6 +963,7 @@ class MpvPlayerActivity : AppCompatActivity() {
         Thread {
             if (destroyed) return@Thread
             val token = runCatching { p.register(session, share, path) }.getOrElse { e ->
+                if (destroyed || generation != loadGeneration || currentPath != path) return@Thread
                 runOnUiThread {
                     if (destroyed) return@runOnUiThread
                     binding.loading.visibility = android.view.View.GONE
@@ -884,17 +973,30 @@ class MpvPlayerActivity : AppCompatActivity() {
                 return@Thread
             }
             runOnUiThread {
-                if (destroyed) { p.unregister(token); return@runOnUiThread }
-                currentToken?.let { p.unregister(it) }
+                if (destroyed) {
+                    Thread { p.unregister(token) }.start()
+                    return@runOnUiThread
+                }
+                // 用户在 register 期间又点了下一集：丢弃这一轮，避免旧文件晚到后覆盖新文件
+                if (generation != loadGeneration || currentPath != path) {
+                    Thread { p.unregister(token) }.start()
+                    return@runOnUiThread
+                }
+                val previousToken = currentToken
                 currentToken = token
                 val resumeMs = PlaybackProgressRepository.get(server.id, share, path)?.resumePositionMs ?: 0L
                 val url = p.url(token)
                 android.util.Log.i("MpvPlayer", "register done, surfaceReady=$surfaceReady, pendingLoad=$pendingLoad")
                 if (surfaceReady) doLoadFile(url, resumeMs)
                 else pendingLoad = url to resumeMs
+                // 关旧句柄可能被旧 HTTP 流的读线程拖住，不能放在主线程；新文件已经开始加载
+                if (previousToken != null) {
+                    Thread { p.unregister(previousToken) }.start()
+                }
             }
 
             // 同名字幕（mpv 自带 libass 渲染，比自绘层效果好）；可在设置里关闭自动加载
+            if (generation != loadGeneration || destroyed) return@Thread
             if (SettingsRepository.autoLoadSubtitles && !destroyed) {
                 val base = name.substringBeforeLast('.')
                 val subName = listOf("srt", "ass", "ssa", "vtt")
@@ -925,6 +1027,10 @@ class MpvPlayerActivity : AppCompatActivity() {
         // 切集/列表点选期间屏蔽 END_FILE，避免 loadfile replace 的旧文件结束事件连锁跳集
         suppressEndFile = true
         loadFileAtMs = System.currentTimeMillis()
+        loadStartedMs = loadFileAtMs
+        videoReady = false
+        lastPlaying = null
+        pendingPlaybackPath = currentPath
         if (resumeMs > 0L) m.setOptionString("start", (resumeMs / 1000.0).toString())
         else m.setOptionString("start", "0")
         // 倍速在切集时继承常驻值（与原版一致）
@@ -932,6 +1038,27 @@ class MpvPlayerActivity : AppCompatActivity() {
         m.setPropertyDouble("speed", normalSpeed.toDouble())
         updateSpeedButton()
         m.command(arrayOf("loadfile", url, "replace"))
+        // 切集后默认继续播放：libmpv 的 pause 是全局属性，不重置会保留上一集的暂停态
+        m.command(arrayOf("set", "pause", "no"))
+    }
+
+    /** 顶栏文件夹按钮：退出播放页，回到当前视频所在的 SMB 目录 */
+    private fun openCurrentFolder() {
+        if (!this::server.isInitialized || server.id == "mpv-debug") {
+            PlayerToast.show(this, "当前为调试播放，无法打开共享文件夹")
+            return
+        }
+        saveCurrentProgress()
+        val intent = BrowseActivity.intent(
+            context = this,
+            serverId = server.id,
+            startPath = directory,
+            startShare = share,
+            exactStartPath = true,
+        )
+        // BrowseActivity 已在播放页下方：清掉播放页并在同一任务里重建 Browse，避免叠两层
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        startActivity(intent)
     }
 
     /** reex 风格播放列表：右侧半透明抽屉，序号 + 文件名，当前项蓝色高亮 */
@@ -1010,6 +1137,8 @@ class MpvPlayerActivity : AppCompatActivity() {
                 setOnClickListener {
                     d.dismiss()
                     if (idx != currentIndex) {
+                        // 播放列表切集也先保存旧视频进度
+                        saveCurrentProgress()
                         currentIndex = idx
                         loadCurrent()
                     }
@@ -1050,12 +1179,12 @@ class MpvPlayerActivity : AppCompatActivity() {
                 onFrameStepChanged = { enabled ->
                     frameStepEnabled = enabled
                     updateFrameStepButtons()
-                    Toast.makeText(
+                    PlayerToast.show(
                         this,
-                        if (enabled) "帧步进开启：导出帧左侧显示逐帧按钮" else "帧步进关闭：隐藏逐帧按钮",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                        if (enabled) "帧步进开启：导出帧左侧显示逐帧按钮" else "帧步进关闭：隐藏逐帧按钮"
+                    )
                 },
+                onControlButtonsChanged = { applyControlButtonsVisibility() },
                 onAutoHideChanged = { enabled, seconds ->
                     autoHideEnabled = enabled
                     autoHideSeconds = seconds
@@ -1064,6 +1193,7 @@ class MpvPlayerActivity : AppCompatActivity() {
                 onThemeOpacityChanged = {
                     PlayerTheme.applyBackground(binding.topPanel)
                     PlayerTheme.applyBackground(binding.controls)
+                    PlayerTheme.applyBackground(binding.gestureFeedback)
                 },
                 onClosed = { setControlsVisible(true) },
             )
@@ -1191,10 +1321,15 @@ class MpvPlayerActivity : AppCompatActivity() {
         binding.btnSpeed.text = getString(R.string.settings_speed_value, normalSpeed)
     }
 
-    /** 相对快退/快进（毫秒），mpv seek relative 以秒为单位；手势来源用居中反馈替代 toast */
+    /** 当前快退/快进步长（毫秒），从播放设置读取，默认 5 秒 */
+    private fun seekStepMs(): Long = SettingsRepository.seekStepSeconds * 1000L
+
+    /** 相对快退/快进（毫秒），只按关键帧边界跳转；手势来源用居中反馈替代 toast */
     private fun seekBy(deltaMs: Long, fromGesture: Boolean = false) {
         val m = mpv ?: return
-        m.command(arrayOf("seek", (deltaMs / 1000.0).toString(), "relative"))
+        // relative+keyframes：相对位置跳转，并强制落在附近关键帧，避免逐帧精确 seek 拖慢 SMB 流
+        m.command(arrayOf("seek", (deltaMs / 1000.0).toString(), "relative+keyframes"))
+        scheduleProgressSave()
         if (fromGesture) {
             val target = currentPositionMs() + deltaMs
             binding.gestureFeedback.text =
@@ -1203,18 +1338,20 @@ class MpvPlayerActivity : AppCompatActivity() {
             handler.removeCallbacks(hideGestureFeedbackRunnable)
             handler.postDelayed(hideGestureFeedbackRunnable, 450L)
         } else {
-            Toast.makeText(this, if (deltaMs > 0) "快进 ${deltaMs / 1000} 秒" else "快退 ${-deltaMs / 1000} 秒", Toast.LENGTH_SHORT).show()
+            PlayerToast.show(this, if (deltaMs > 0) "快进 ${deltaMs / 1000} 秒" else "快退 ${-deltaMs / 1000} 秒")
         }
     }
 
     /** 切换上一个/下一个视频，越界不动 */
     private fun switchVideo(target: Int) {
         if (target !in videoNames.indices) {
-            Toast.makeText(this, if (target < 0) "已经是第一个" else "已经是最后一个", Toast.LENGTH_SHORT).show()
+            PlayerToast.show(this, if (target < 0) "已经是第一个" else "已经是最后一个")
             return
         }
+        // 切集前先把旧视频的当前位置落盘，否则 currentPath 会被新视频覆盖
+        saveCurrentProgress()
         currentIndex = target
-        Toast.makeText(this, "播放：${videoNames[target]}", Toast.LENGTH_SHORT).show()
+        PlayerToast.show(this, "播放：${videoNames[target]}")
         loadCurrent()
     }
 
@@ -1246,7 +1383,7 @@ class MpvPlayerActivity : AppCompatActivity() {
                 withContext(Dispatchers.IO) { session.delete(share, path, false) }
                 if (destroyed) return@launch
                 PlaybackProgressRepository.remove(server.id, share, path)
-                Toast.makeText(this@MpvPlayerActivity, getString(R.string.deleted, name), Toast.LENGTH_SHORT).show()
+                PlayerToast.show(this@MpvPlayerActivity, getString(R.string.deleted, name))
                 videoNames = videoNames.filterNot { it == name }
                 if (videoNames.isEmpty()) { finish(); return@launch }
                 currentIndex = currentIndex.coerceIn(0, videoNames.lastIndex)
@@ -1255,7 +1392,7 @@ class MpvPlayerActivity : AppCompatActivity() {
                 throw e
             } catch (e: Exception) {
                 if (destroyed) return@launch
-                Toast.makeText(this@MpvPlayerActivity, "删除失败：${e.message}", Toast.LENGTH_SHORT).show()
+                PlayerToast.show(this@MpvPlayerActivity, "删除失败：${e.message}")
                 loadCurrent() // 删除失败，从原位置继续播放
             }
         }
@@ -1266,7 +1403,7 @@ class MpvPlayerActivity : AppCompatActivity() {
         if (moveInProgress) return
         val name = videoNames.getOrNull(currentIndex) ?: return
         if (directory.trim('/').substringAfterLast('/') == folder) {
-            Toast.makeText(this, getString(R.string.player_already_in_folder, folder), Toast.LENGTH_SHORT).show()
+            PlayerToast.show(this, getString(R.string.player_already_in_folder, folder))
             return
         }
         val srcPath = if (directory.isBlank()) name else directory.trim('/') + "/" + name
@@ -1287,11 +1424,11 @@ class MpvPlayerActivity : AppCompatActivity() {
                 videoNames = videoNames.filterNot { it == name }
                 moveInProgress = false
                 if (removedAt < 0 || removedAt >= videoNames.size) {
-                    Toast.makeText(this@MpvPlayerActivity, getString(R.string.player_moved_last, folder), Toast.LENGTH_SHORT).show()
+                    PlayerToast.show(this@MpvPlayerActivity, getString(R.string.player_moved_last, folder))
                     finish()
                     return@launch
                 }
-                Toast.makeText(this@MpvPlayerActivity, getString(R.string.player_moved, folder, name), Toast.LENGTH_SHORT).show()
+                PlayerToast.show(this@MpvPlayerActivity, getString(R.string.player_moved, folder, name))
                 currentIndex = removedAt.coerceIn(0, videoNames.lastIndex)
                 loadCurrent()
             } catch (e: CancellationException) {
@@ -1300,7 +1437,7 @@ class MpvPlayerActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 moveInProgress = false
                 if (destroyed) return@launch
-                Toast.makeText(this@MpvPlayerActivity, "移动失败：${e.message}", Toast.LENGTH_SHORT).show()
+                PlayerToast.show(this@MpvPlayerActivity, "移动失败：${e.message}")
                 loadCurrent()
             }
         }
@@ -1322,7 +1459,7 @@ class MpvPlayerActivity : AppCompatActivity() {
         val fileName = "${if (safeName.isEmpty()) "frame" else safeName}_$timeTag.png"
         val view = binding.mpvSurface
         if (view.width <= 0 || view.height <= 0) {
-            Toast.makeText(this, "截图失败：画面未就绪", Toast.LENGTH_SHORT).show()
+            PlayerToast.show(this, "截图失败：画面未就绪")
             return
         }
 
@@ -1333,7 +1470,7 @@ class MpvPlayerActivity : AppCompatActivity() {
             if (!finished) {
                 finished = true
                 android.util.Log.w("MpvPlayer", "PixelCopy 超时（模拟器可能不支持）")
-                runOnUiThread { Toast.makeText(this, "截图失败：设备不支持抓帧（PixelCopy 超时）", Toast.LENGTH_SHORT).show() }
+                runOnUiThread { PlayerToast.show(this, "截图失败：设备不支持抓帧（PixelCopy 超时）") }
             }
         }
         handler.postDelayed(timeoutRunnable, 2000L)
@@ -1349,7 +1486,7 @@ class MpvPlayerActivity : AppCompatActivity() {
                         if (!finished) {
                             finished = true
                             handler.removeCallbacks(timeoutRunnable)
-                            runOnUiThread { Toast.makeText(this, "截图失败（PixelCopy $result）", Toast.LENGTH_SHORT).show() }
+                            runOnUiThread { PlayerToast.show(this, "截图失败（PixelCopy $result）") }
                         }
                     }
                     return@request
@@ -1386,7 +1523,7 @@ class MpvPlayerActivity : AppCompatActivity() {
                     }
                     val p = if (directory.isBlank()) finalName else directory.trim('/') + "/" + finalName
                     session.writeFile(share, p, bytes)
-                    runOnUiThread { Toast.makeText(this, "已保存到视频目录：$finalName", Toast.LENGTH_SHORT).show() }
+                    runOnUiThread { PlayerToast.show(this, "已保存到视频目录：$finalName") }
                 } else {
                     val values = ContentValues().apply {
                         put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
@@ -1399,17 +1536,36 @@ class MpvPlayerActivity : AppCompatActivity() {
                     if (uri == null) throw java.io.IOException("无法创建相册条目")
                     contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
                         ?: throw java.io.IOException("无法写入相册")
-                    runOnUiThread { Toast.makeText(this, "已保存到相册：$fileName", Toast.LENGTH_SHORT).show() }
+                    runOnUiThread { PlayerToast.show(this, "已保存到相册：$fileName") }
                 }
             } catch (e: Exception) {
-                runOnUiThread { Toast.makeText(this, "截图失败：${e.message}", Toast.LENGTH_SHORT).show() }
+                runOnUiThread { PlayerToast.show(this, "截图失败：${e.message}") }
             }
         }.start()
     }
 
-    private fun saveProgress(positionMs: Long, durationMs: Long) {
-        if (positionMs <= 0L || durationMs <= 0L || currentPath.isEmpty()) return
-        PlaybackProgressRepository.save(server.id, share, currentPath, positionMs, durationMs)
+    /**
+     * 立即把当前文件位置落盘。
+     *
+     * 除 5 秒周期的 ticker 外，切集、播放列表选台、暂停、拖动进度、退后台、
+     * Activity 销毁都会主动调用，避免旧视频路径被新视频覆盖后丢进度。
+     * [explicit] 表示用户主动 seek 出来的位置，允许把进度保存为 0。
+     */
+    private fun saveCurrentProgress(explicit: Boolean = false) {
+        if (server.id.isEmpty()) return
+        val path = playbackPath
+        if (path.isEmpty()) return
+        val posMs = currentPositionMs()
+        val durMs = ((runCatching { mpv?.getPropertyDouble("duration") }.getOrNull() ?: 0.0) * 1000).toLong()
+        if (durMs <= 0L || posMs < 0L || (posMs == 0L && !explicit)) return
+        PlaybackProgressRepository.save(server.id, share, path, posMs, durMs, explicit = explicit)
+        lastSaveMs = posMs
+    }
+
+    /** seek 后给 mpv 300ms 更新 time-pos，再保存最终落点 */
+    private fun scheduleProgressSave() {
+        handler.removeCallbacks(saveAfterSeekRunnable)
+        handler.postDelayed(saveAfterSeekRunnable, 300L)
     }
 
     private fun formatTime(ms: Long): String {
@@ -1421,7 +1577,18 @@ class MpvPlayerActivity : AppCompatActivity() {
         else "$m:${s.toString().padStart(2, '0')}"
     }
 
+    override fun onResume() {
+        super.onResume()
+        windowInBackground = false
+        // 从设置页返回或从后台恢复时，同步按钮显示开关
+        applyControlButtonsVisibility()
+    }
+
     override fun onPause() {
+        // 必须在 super 之前置位，保证随后 surfaceDestroyed 走「不 detach」分支
+        windowInBackground = true
+        // 切后台/锁屏/进入其它页面时立刻落盘，不能等 onStop 或进程被杀
+        saveCurrentProgress()
         super.onPause()
         // 切后台/锁屏时如果长按手指没有正常抬起，强制结束临时倍速，避免回来时还在加速
         if (isLongPressBoost) stopSpeedBoost()
@@ -1435,19 +1602,16 @@ class MpvPlayerActivity : AppCompatActivity() {
         }
         if (isLongPressBoost) stopSpeedBoost()
         cancelActiveGesture()
-        val posMs = currentPositionMs()
-        val durMs = ((runCatching { mpv?.getPropertyDouble("duration") }.getOrNull() ?: 0.0) * 1000).toLong()
-        saveProgress(posMs, durMs)
+        saveCurrentProgress()
     }
 
     override fun onDestroy() {
         destroyed = true // 先拦截所有异步回调，再开始销毁
-        val posMs = ((runCatching { mpv?.getPropertyDouble("time-pos") }.getOrNull() ?: 0.0) * 1000).toLong()
-        val durMs = ((runCatching { mpv?.getPropertyDouble("duration") }.getOrNull() ?: 0.0) * 1000).toLong()
-        saveProgress(posMs, durMs)
+        saveCurrentProgress()
         handler.removeCallbacks(ticker)
         handler.removeCallbacks(hideGestureFeedbackRunnable)
         handler.removeCallbacks(autoHideRunnable)
+        handler.removeCallbacks(saveAfterSeekRunnable)
         tickerPosted = false
         // 先停播放再 destroy，避免 mpv 内部线程仍在读 HTTP 流时句柄被 proxy 关闭
         mpv?.let { runCatching { it.command(arrayOf("set", "pause", "yes")); it.command(arrayOf("stop")) } }
@@ -1456,13 +1620,12 @@ class MpvPlayerActivity : AppCompatActivity() {
         mpv = null
         proxy?.stop()
         proxy = null
+        PlayerToast.dismiss()
         super.onDestroy()
     }
 
     companion object {
         private const val TAG = "MpvPlayer"
-        /** 快退/快进步长，与原版 PlayerActivity 一致 */
-        private const val SEEK_STEP_MS = 5_000L
 
         /** 旋转四档循环：竖 → 横 → 倒竖 → 倒横（每次 90°，与原版一致） */
         private val ROTATION_ORDER = intArrayOf(
@@ -1476,6 +1639,7 @@ class MpvPlayerActivity : AppCompatActivity() {
         const val EXTRA_SHARE = "share"
         const val EXTRA_DIR = "dir"
         const val EXTRA_INDEX = "index"
+        private const val EXTRA_REBUILD_TOAST = "rebuild_toast"
         const val EXTRA_TARGET_NAME = "target_name"
 
         fun intent(

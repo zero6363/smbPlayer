@@ -5,7 +5,7 @@ import com.smbplayer.app.data.SettingsRepository
 import kotlin.math.roundToInt
 
 /**
- * 播放页浮层主题：统一按「背景透明度」缩放控制栏 / 设置面板 / 弹窗底板的 alpha。
+ * 播放页浮层主题：统一按「背景透明度」缩放控制栏 / 设置面板 / 弹窗底板 / Toast 的 alpha。
  * reex 的主题透明度作用域是整个播放器 UI，这里保持一致，默认 0.78。
  */
 object PlayerTheme {

@@ -67,6 +67,16 @@ class SettingsActivity : AppCompatActivity() {
             SettingsRepository.zoneVolumeBrightness = isChecked
         }
 
+        // 播放页快退/快进按钮、上一个/下一个按钮
+        binding.swShowSeekButtons.isChecked = SettingsRepository.showSeekButtons
+        binding.swShowSeekButtons.setOnCheckedChangeListener { _, isChecked ->
+            SettingsRepository.showSeekButtons = isChecked
+        }
+        binding.swShowPrevNextButtons.isChecked = SettingsRepository.showPrevNextButtons
+        binding.swShowPrevNextButtons.setOnCheckedChangeListener { _, isChecked ->
+            SettingsRepository.showPrevNextButtons = isChecked
+        }
+
         // 目录文件类型显示
         binding.swShowImages.isChecked = SettingsRepository.showImages
         binding.swShowImages.setOnCheckedChangeListener { _, isChecked ->

@@ -6,7 +6,7 @@ import android.content.SharedPreferences
 /**
  * 播放器设置持久化。
  *
- * 存储后台播放开关、长按临时倍速、播放页常驻倍速、手势灵敏度、
+ * 存储后台播放开关、长按临时倍速、播放页常驻倍速、快退/快进步长、手势灵敏度、
  * 首页播放记录显示开关与显示条数、导出帧保存位置等用户偏好。
  */
 object SettingsRepository {
@@ -26,6 +26,9 @@ object SettingsRepository {
     private const val KEY_SHOW_OTHER_FILES = "show_other_files"
     private const val KEY_UI_OPACITY = "ui_background_opacity"
     private const val KEY_FRAME_STEP = "frame_step_enabled"
+    private const val KEY_SHOW_SEEK_BUTTONS = "show_seek_buttons"
+    private const val KEY_SHOW_PREV_NEXT_BUTTONS = "show_prev_next_buttons"
+    private const val KEY_SEEK_STEP = "seek_step_seconds"
     private const val KEY_AUTO_HIDE = "auto_hide_controls"
     private const val KEY_AUTO_HIDE_SECONDS = "auto_hide_seconds"
     private const val KEY_AUTO_LOAD_SUBS = "auto_load_subtitles"
@@ -43,6 +46,11 @@ object SettingsRepository {
     const val DEFAULT_HISTORY_COUNT = 12
     const val MIN_HISTORY_COUNT = 1
     const val MAX_HISTORY_COUNT = 100
+
+    /** 快退/快进步长：默认 5 秒，可在播放设置里改成 1~60 秒 */
+    const val DEFAULT_SEEK_STEP_SECONDS = 5
+    const val MIN_SEEK_STEP_SECONDS = 1
+    const val MAX_SEEK_STEP_SECONDS = 60
 
     private val lock = Any()
 
@@ -107,6 +115,30 @@ object SettingsRepository {
         get() = store().getBoolean(KEY_FRAME_STEP, false)
         set(value) {
             store().edit().putBoolean(KEY_FRAME_STEP, value).apply()
+        }
+
+    /** 快退/快进每次跳转的秒数，默认 [DEFAULT_SEEK_STEP_SECONDS] 秒 */
+    var seekStepSeconds: Int
+        get() = store().getInt(KEY_SEEK_STEP, DEFAULT_SEEK_STEP_SECONDS)
+            .coerceIn(MIN_SEEK_STEP_SECONDS, MAX_SEEK_STEP_SECONDS)
+        set(value) {
+            store().edit()
+                .putInt(KEY_SEEK_STEP, value.coerceIn(MIN_SEEK_STEP_SECONDS, MAX_SEEK_STEP_SECONDS))
+                .apply()
+        }
+
+    /** 播放页是否显示快退/快进按钮，默认显示；关闭后仅隐藏按钮，手势和进度条仍可 seek */
+    var showSeekButtons: Boolean
+        get() = store().getBoolean(KEY_SHOW_SEEK_BUTTONS, true)
+        set(value) {
+            store().edit().putBoolean(KEY_SHOW_SEEK_BUTTONS, value).apply()
+        }
+
+    /** 播放页是否显示上一个/下一个视频按钮，默认显示；关闭不影响播放列表和自动连播 */
+    var showPrevNextButtons: Boolean
+        get() = store().getBoolean(KEY_SHOW_PREV_NEXT_BUTTONS, true)
+        set(value) {
+            store().edit().putBoolean(KEY_SHOW_PREV_NEXT_BUTTONS, value).apply()
         }
 
     /** 控制栏/顶部菜单自动隐藏，默认开启 */

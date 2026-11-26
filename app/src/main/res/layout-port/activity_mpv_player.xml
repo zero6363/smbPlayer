@@ -52,7 +52,7 @@
         android:textStyle="bold"
         android:visibility="gone" />
 
-    <!-- 手机顶部控制区：第一行返回/文件名/倍速/播放列表/删除/更多，第二行倒计时+分类 1/2/3 -->
+    <!-- 手机顶部控制区：第一行返回/文件名/倍速/播放列表/旋转/更多，第二行倒计时+分类 1/2/3 -->
     <LinearLayout
         android:id="@+id/top_panel"
         android:layout_width="match_parent"
@@ -68,7 +68,7 @@
         android:paddingEnd="12dp"
         android:paddingBottom="6dp">
 
-        <!-- 第一行：返回 / 文件名 / 倍速 / 截图 / 更多 -->
+        <!-- 第一行：返回 / 文件名 / 倍速 / 播放列表 / 旋转 / 更多 -->
         <LinearLayout
             android:id="@+id/top_bar"
             android:layout_width="match_parent"
@@ -132,6 +132,15 @@
                 android:visibility="gone" />
 
             <ImageButton
+                android:id="@+id/btn_open_folder"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="打开所在文件夹"
+                android:src="@drawable/ic_folder"
+                app:tint="@color/player_control_text" />
+
+            <ImageButton
                 android:id="@+id/btn_playlist"
                 android:layout_width="38dp"
                 android:layout_height="38dp"
@@ -139,14 +148,15 @@
                 android:contentDescription="播放列表"
                 android:src="@drawable/ic_playlist_play"
                 app:tint="@color/player_control_text" />
+
             <ImageButton
-                android:id="@+id/btn_delete"
+                android:id="@+id/btn_rotate"
                 android:layout_width="38dp"
                 android:layout_height="38dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/player_delete_current"
-                android:src="@drawable/ic_delete"
-                app:tint="#FFFF8A80" />
+                android:contentDescription="旋转"
+                android:src="@drawable/ic_screen_rotation"
+                app:tint="@color/player_control_text" />
 
             <ImageButton
                 android:id="@+id/btn_more"
@@ -284,7 +294,7 @@
         </LinearLayout>
 
         <!-- 第四行：上一个/快退/播放/快进/下一个 五个键整体靠左；
-             右侧依次为逐帧后退、逐帧前进、导出当前帧、旋转 -->
+             右侧依次为逐帧后退、逐帧前进、导出当前帧、删除 -->
         <LinearLayout
             android:id="@+id/playback_row"
             android:layout_width="match_parent"
@@ -376,14 +386,14 @@
                 app:tint="@color/player_control_text" />
 
             <ImageButton
-                android:id="@+id/btn_rotate"
-                android:layout_width="42dp"
-                android:layout_height="42dp"
+                android:id="@+id/btn_delete"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
                 android:layout_marginStart="4dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="旋转"
-                android:src="@drawable/ic_screen_rotation"
-                app:tint="@color/player_control_text" />
+                android:contentDescription="@string/player_delete_current"
+                android:src="@drawable/ic_delete"
+                app:tint="#FFFF8A80" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

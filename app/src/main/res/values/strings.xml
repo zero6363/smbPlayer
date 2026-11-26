@@ -211,6 +211,10 @@
     <string name="settings_history_visible_hint">关闭后隐藏首页的播放记录卡片；播放进度仍会保存，不影响续播</string>
     <string name="settings_zone_volume_brightness">分区滑动调音量/亮度</string>
     <string name="settings_zone_volume_brightness_hint">开启后：播放页左半屏上下滑调亮度、右半屏上下滑调音量；关闭时仅横滑调进度</string>
+    <string name="settings_show_seek_buttons">快退 / 快进按钮</string>
+    <string name="settings_show_seek_buttons_hint">关闭后播放页隐藏快退、快进按钮；横滑手势和进度条仍可调进度</string>
+    <string name="settings_show_prev_next_buttons">上一个 / 下一个按钮</string>
+    <string name="settings_show_prev_next_buttons_hint">关闭后播放页隐藏换集按钮；播放列表、自动连播和播放进度不受影响</string>
     <string name="settings_show_images">目录显示图片类文件</string>
     <string name="settings_show_images_hint">开启后在目录里显示 jpg/png/gif 等图片；关闭则隐藏。与「显示其他文件」都关闭时只显示视频</string>
     <string name="settings_show_other_files">目录显示其他类文件</string>

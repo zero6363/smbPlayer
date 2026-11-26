@@ -17,7 +17,6 @@ import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
 import com.smbplayer.app.R
@@ -40,6 +39,7 @@ class MpvSettingsPanel(
     private val onRepeatModeChanged: (Int) -> Unit = {},
     private val onPanModeChanged: (Boolean) -> Unit = {},
     private val onFrameStepChanged: (Boolean) -> Unit = {},
+    private val onControlButtonsChanged: () -> Unit = {},
     private val onAutoHideChanged: (Boolean, Int) -> Unit = { _, _ -> },
     private val onThemeOpacityChanged: () -> Unit = {},
     private val onClosed: () -> Unit = {},
@@ -106,7 +106,7 @@ class MpvSettingsPanel(
 
         // 主题：背景透明度（作用于控制栏、本面板和所有深色弹窗）
         bindThemeControls(d)
-        // 播放行为：帧步进、自动隐藏界面及延迟
+        // 播放行为：快退/快进间隔、帧步进、自动隐藏界面及延迟
         bindPlaybackBehavior(d)
         // 字幕：自动加载 + 字幕样式入口
         bindSubtitleControls(d)
@@ -129,17 +129,16 @@ class MpvSettingsPanel(
 
         bindTile(d, R.id.tile_background, {
             backgroundPlay = !backgroundPlay
-            Toast.makeText(activity, if (backgroundPlay) "后台播放开启" else "后台播放关闭", Toast.LENGTH_SHORT).show()
+            PlayerToast.show(activity, if (backgroundPlay) "后台播放开启" else "后台播放关闭")
         }, { backgroundPlay })
 
         bindTile(d, R.id.tile_pan, {
             panMode = !panMode
             onPanModeChanged(panMode)
-            Toast.makeText(
+            PlayerToast.show(
                 activity,
-                if (panMode) "缩放平移已开启：双指捏合缩放、拖动平移" else "缩放平移已关闭，画面已复位",
-                Toast.LENGTH_SHORT
-            ).show()
+                if (panMode) "缩放平移已开启：双指捏合缩放、拖动平移" else "缩放平移已关闭，画面已复位"
+            )
         }, { panMode })
 
         // 循环（第 4 项：播完停止，不自动播放下一个）
@@ -239,11 +238,31 @@ class MpvSettingsPanel(
         })
     }
 
-    /** 帧步进开关（控制播放页导出帧左侧的逐帧按钮）+ 自动隐藏界面开关/延迟（reex 默认 4s，可 1~20s 自定义） */
+    /** 快退/快进间隔（默认 5 秒、可 1~60 秒）+ 帧步进开关 + 自动隐藏界面开关/延迟（reex 默认 4s，可 1~20s 自定义） */
     private fun bindPlaybackBehavior(d: Dialog) {
         frameStep = SettingsRepository.frameStepEnabled
         autoHide = SettingsRepository.autoHideControls
         autoHideSeconds = SettingsRepository.autoHideSeconds
+
+        // 快退/快进步长：点整行弹数字滑块，默认 5 秒，可 1~60 秒
+        val rowSeekStep = d.findViewById<android.view.View>(R.id.row_seek_step)
+        val tvSeekStep = d.findViewById<TextView>(R.id.tv_seek_step)
+        fun renderSeekStep() {
+            tvSeekStep?.text = "${SettingsRepository.seekStepSeconds} 秒 · 关键帧"
+        }
+        renderSeekStep()
+        rowSeekStep?.setOnClickListener {
+            showValueDialog(
+                "快退 / 快进间隔",
+                SettingsRepository.MIN_SEEK_STEP_SECONDS,
+                SettingsRepository.MAX_SEEK_STEP_SECONDS,
+                SettingsRepository.seekStepSeconds,
+                " 秒",
+            ) { value ->
+                SettingsRepository.seekStepSeconds = value
+                renderSeekStep()
+            }
+        }
 
         val swFrame = d.findViewById<Switch>(R.id.switch_frame_step)
         swFrame?.isChecked = frameStep
@@ -251,6 +270,20 @@ class MpvSettingsPanel(
             frameStep = checked
             SettingsRepository.frameStepEnabled = checked
             onFrameStepChanged(checked)
+        }
+
+        // 播放页按钮显示：快退/快进、上一个/下一个，关闭后立即从底部控制栏移除
+        val swSeekButtons = d.findViewById<Switch>(R.id.switch_seek_buttons)
+        swSeekButtons?.isChecked = SettingsRepository.showSeekButtons
+        swSeekButtons?.setOnCheckedChangeListener { _, checked ->
+            SettingsRepository.showSeekButtons = checked
+            onControlButtonsChanged()
+        }
+        val swPrevNext = d.findViewById<Switch>(R.id.switch_prev_next_buttons)
+        swPrevNext?.isChecked = SettingsRepository.showPrevNextButtons
+        swPrevNext?.setOnCheckedChangeListener { _, checked ->
+            SettingsRepository.showPrevNextButtons = checked
+            onControlButtonsChanged()
         }
 
         val swAuto = d.findViewById<Switch>(R.id.switch_auto_hide)
@@ -483,9 +516,9 @@ class MpvSettingsPanel(
         refreshSleepText()
         if (totalSeconds > 0) {
             handler.post(sleepTicker)
-            Toast.makeText(activity, "${hms(totalSeconds)} 后停止播放", Toast.LENGTH_SHORT).show()
+            PlayerToast.show(activity, "${hms(totalSeconds)} 后停止播放")
         } else {
-            Toast.makeText(activity, "定时关闭已取消", Toast.LENGTH_SHORT).show()
+            PlayerToast.show(activity, "定时关闭已取消")
         }
     }
 
@@ -510,11 +543,10 @@ class MpvSettingsPanel(
         sw?.setOnCheckedChangeListener { _, checked ->
             SettingsRepository.autoLoadSubtitles = checked
             SubtitleStyle.apply(mpv, activity, reload = false)
-            Toast.makeText(
+            PlayerToast.show(
                 activity,
-                if (checked) "自动加载字幕开启" else "自动加载字幕关闭（下次播放生效）",
-                Toast.LENGTH_SHORT
-            ).show()
+                if (checked) "自动加载字幕开启" else "自动加载字幕关闭（下次播放生效）"
+            )
         }
         d.findViewById<View>(R.id.row_sub_style)?.setOnClickListener { showSubtitleStyleDialog() }
         refreshSubStyleSummary()
@@ -543,7 +575,7 @@ class MpvSettingsPanel(
             runCatching { mpv.setOptionString("hwdec", key) }
             parent.findViewById<TextView>(R.id.tv_hwdec_mode)?.text = key
             refreshTileIfPresent(parent, R.id.tile_hwdec, key != "no")
-            Toast.makeText(activity, "硬件解码已切换为 $key，重新打开视频生效", Toast.LENGTH_SHORT).show()
+            PlayerToast.show(activity, "硬件解码已切换为 $key，重新打开视频生效")
         }
     }
 
@@ -829,8 +861,15 @@ class MpvSettingsPanel(
         d.show()
     }
 
-    /** 数字调节弹层：字体大小 / 边框大小 */
-    private fun showValueDialog(title: String, min: Int, max: Int, current: Int, onSet: (Int) -> Unit) {
+    /** 数字调节弹层：字体大小 / 边框大小 / 快退快进间隔 */
+    private fun showValueDialog(
+        title: String,
+        min: Int,
+        max: Int,
+        current: Int,
+        suffix: String = "",
+        onSet: (Int) -> Unit,
+    ) {
         val d = Dialog(activity, R.style.MpvSettingsDialog)
         val panel = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -844,8 +883,9 @@ class MpvSettingsPanel(
             setTypeface(typeface, Typeface.BOLD)
             setPadding(dp(4), dp(4), dp(4), dp(6))
         })
+        fun display(value: Int) = "$value$suffix"
         val tvValue = TextView(activity).apply {
-            text = current.toString()
+            text = display(current)
             setTextColor(activity.getColor(R.color.player_accent))
             textSize = 22f
             gravity = Gravity.CENTER
@@ -864,7 +904,7 @@ class MpvSettingsPanel(
         ))
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
-                tvValue.text = (min + p).toString()
+                tvValue.text = display(min + p)
             }
             override fun onStartTrackingTouch(s: SeekBar?) {}
             override fun onStopTrackingTouch(s: SeekBar?) {}
