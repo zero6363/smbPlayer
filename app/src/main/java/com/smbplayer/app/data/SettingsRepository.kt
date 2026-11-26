@@ -21,6 +21,7 @@ object SettingsRepository {
     private const val KEY_HISTORY_VISIBLE = "history_visible"
     private const val KEY_HISTORY_COUNT = "history_count"
     private const val KEY_FRAME_SAVE_TO_FOLDER = "frame_save_to_folder"
+    private const val KEY_FRAME_SCREENSHOT_SUBTITLES = "frame_screenshot_subtitles"
     private const val KEY_ZONE_VOLUME_BRIGHTNESS = "zone_volume_brightness"
     private const val KEY_SHOW_IMAGES = "show_images"
     private const val KEY_SHOW_OTHER_FILES = "show_other_files"
@@ -274,6 +275,16 @@ object SettingsRepository {
         get() = !store().getBoolean(KEY_FRAME_SAVE_TO_FOLDER, false)
         set(value) {
             store().edit().putBoolean(KEY_FRAME_SAVE_TO_FOLDER, !value).apply()
+        }
+
+    /**
+     * 导出当前帧时是否把字幕一起截进去，默认 true（保持原来 PixelCopy 抓到的画面）。
+     * 关闭时只在抓帧瞬间隐藏 mpv 的 sub-visibility，抓完立即恢复，不影响当前播放的字幕显示。
+     */
+    var frameScreenshotWithSubtitles: Boolean
+        get() = store().getBoolean(KEY_FRAME_SCREENSHOT_SUBTITLES, true)
+        set(value) {
+            store().edit().putBoolean(KEY_FRAME_SCREENSHOT_SUBTITLES, value).apply()
         }
 
     /**

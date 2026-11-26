@@ -549,6 +549,12 @@ class MpvSettingsPanel(
             )
         }
         d.findViewById<View>(R.id.row_sub_style)?.setOnClickListener { showSubtitleStyleDialog() }
+        val swFrameSub = d.findViewById<Switch>(R.id.switch_frame_subtitles)
+        swFrameSub?.isChecked = SettingsRepository.frameScreenshotWithSubtitles
+        swFrameSub?.setOnCheckedChangeListener { _, checked ->
+            SettingsRepository.frameScreenshotWithSubtitles = checked
+            PlayerToast.show(activity, if (checked) "截图将带字幕" else "截图将不带字幕")
+        }
         refreshSubStyleSummary()
     }
 

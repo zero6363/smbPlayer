@@ -80,6 +80,8 @@
     <string name="player_move_failed">移动失败：%1$s</string>
     <string name="player_next">下一个</string>
     <string name="player_prev">上一个</string>
+    <string name="player_return_last_position">返回上次位置</string>
+    <string name="player_returned_last_position">已返回上次位置 %1$s</string>
     <string name="player_playlist">播放列表</string>
     <string name="player_title_format">%1$d / %2$d　%3$s</string>
     <string name="player_error">播放失败：%1$s</string>
@@ -168,6 +170,7 @@
     <string name="keyframe_prev">上一帧</string>
     <string name="keyframe_next">下一帧</string>
     <string name="keyframe_save">导出当前帧</string>
+    <string name="keyframe_saved">截图已保存</string>
     <string name="keyframe_saved_name">已保存：%1$s</string>
     <string name="keyframe_saved_folder">已保存到视频所在文件夹：%1$s</string>
     <string name="keyframe_save_failed">保存失败：%1$s</string>

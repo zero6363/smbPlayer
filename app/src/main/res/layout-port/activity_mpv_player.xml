@@ -254,6 +254,27 @@
         android:paddingEnd="12dp"
         android:paddingBottom="10dp">
 
+        <!-- 点击进度条跳转后的撤销入口：进度条上方，3 秒后自动收起 -->
+        <TextView
+            android:id="@+id/btn_return_seek"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="4dp"
+            android:background="@drawable/bg_hint_pill"
+            android:clickable="true"
+            android:contentDescription="@string/player_return_last_position"
+            android:focusable="true"
+            android:paddingStart="14dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="6dp"
+            android:text="@string/player_return_last_position"
+            android:textColor="@color/player_control_text"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
         <!-- 第三行：当前时间 / 细进度条 / 总时长 -->
         <LinearLayout
             android:id="@+id/bottom_bar"
