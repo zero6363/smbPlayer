@@ -16,7 +16,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * [mpv 实验分支] 把 SMB 文件暴露成本地 HTTP 流，供 libmpv 播放。
+ * 把 SMB 文件暴露成本地 HTTP 流，供 libmpv 播放。
  *
  * libmpv 的 AAR 不带 libsmbclient，无法直接 loadfile smb://；MPVLib 也没有开放
  * stream_cb 给 Java 层。所以这里用 smbj（项目已有的 SMB 读取能力）把文件读出来，

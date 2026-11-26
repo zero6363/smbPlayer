@@ -50,7 +50,7 @@ import dev.jdtech.mpv.MPVLib
 import java.io.ByteArrayOutputStream
 
 /**
- * [mpv 实验分支] 基于 libmpv 的 SMB 播放页。
+ * 基于 libmpv 的 SMB 播放页。
  *
  * SMB 数据经 [SmbHttpProxy] 转成 127.0.0.1 上的 HTTP 流喂给 mpv——libmpv AAR
  * 不带 libsmbclient、MPVLib 也没开放 stream_cb，这是本项目能接 SMB 的方式

@@ -52,15 +52,7 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|uiMode"
             android:theme="@style/Theme.SmbPlayer.Player" />
 
-        <!-- [mpv 实验分支] 最小 mpv 验证页，仅 adb 启动，非入口 -->
-        <activity
-            android:name="com.smbplayer.app.player.MpvTestActivity"
-            android:exported="true"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|uiMode"
-            android:theme="@style/Theme.SmbPlayer.Player" />
-
-        <!-- [mpv 实验分支] SMB 播放页：替代 PlayerActivity 作为视频播放入口。
-             调试期临时 exported=true，正式共存测试包改回 false。 -->
+        <!-- SMB 播放页：基于 mpv 内核的视频播放入口。 -->
         <activity
             android:name="com.smbplayer.app.player.MpvPlayerActivity"
             android:exported="false"

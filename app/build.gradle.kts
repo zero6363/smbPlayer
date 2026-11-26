@@ -23,14 +23,13 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        // [mpv 实验分支] 改包名以便与原版共存测试
-        applicationId = "com.smbplayer.app.mpv"
+        applicationId = "com.smbplayer.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 52
-        versionName = "1.42"
+        versionCode = 53
+        versionName = "1.43"
 
-        // [mpv 实验分支] ABI 由 -PmpvAbi 控制，默认 arm64 精简包：
+        // ABI 由 -PmpvAbi 控制，默认 arm64 精简包：
         //   assembleRelease -PmpvAbi=arm64 → 仅 arm64-v8a（约 46MB，真机/发布）
         //   assembleRelease -PmpvAbi=all   → 全架构（约 113MB，模拟器可装）
         ndk {
@@ -119,7 +118,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
 
-    // [mpv 实验分支] 本地 libmpv AAR（46MB，GPL-3.0）
+    // 本地 libmpv AAR（46MB，GPL-3.0）
     implementation(files("libs/libmpv-1.0.0.aar"))
 
     // SMB 客户端（smbj：主引擎，目录浏览/播放/删除）
