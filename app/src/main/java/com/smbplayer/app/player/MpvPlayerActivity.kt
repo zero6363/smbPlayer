@@ -332,11 +332,6 @@ class MpvPlayerActivity : AppCompatActivity() {
         setupBackExit()
         initMpv()
         scheduleAutoHide()
-        // 旋转/重建前暂存的提示（Dialog Toast 无法跨 Activity 存活）
-        intent.getStringExtra(EXTRA_REBUILD_TOAST)?.let { msg ->
-            intent.removeExtra(EXTRA_REBUILD_TOAST)
-            binding.root.post { if (!destroyed) PlayerToast.show(this, msg) }
-        }
 
         // debug_url 模式：mpv 已在 initMpv 里加载，跳过 SMB 目录列举
         if (!intent.getStringExtra("debug_url").isNullOrEmpty()) return
@@ -425,13 +420,10 @@ class MpvPlayerActivity : AppCompatActivity() {
             val current = rotationIndex()
             val next = ROTATION_ORDER[(current + 1) % ROTATION_ORDER.size]
             requestedOrientation = next
-            // Dialog 形式的 Toast 会随旧 Activity 销毁，旋转提示写进 intent，重建后再显示
-            intent.putExtra(EXTRA_REBUILD_TOAST, rotationHint(next))
-            // recreate() 会重建 Activity 并从 intent 重新读 index/targetName；
-            // 必须先把「当前」切集状态写回 intent，否则旋转后会跳回最初进入时的那一集。
-            intent.putExtra(EXTRA_INDEX, currentIndex)
-            videoNames.getOrNull(currentIndex)?.let { intent.putExtra(EXTRA_TARGET_NAME, it) }
-            recreate() // 让 layout-port / layout 重新 inflate（configChanges 下不会自动重载）
+            // 不 recreate()：configChanges 已声明 orientation|screenSize，Activity 不会重建，
+            // mpv 实例/SMB 句柄/进度全部保留，仅 SurfaceView 重挂载，视频无感切换。
+            // 横竖两套布局只是 2dp 边距 + 面板描边的差别，不值得为它整段重载视频。
+            PlayerToast.show(this, rotationHint(next))
         }
 
         // 进度条点击跳转：按下时记住旧位置，并区分「点击」和「拖动」。
@@ -1449,6 +1441,10 @@ class MpvPlayerActivity : AppCompatActivity() {
         isLongPressBoost = true
         val boost = SettingsRepository.playbackSpeed
         m.setPropertyDouble("speed", boost.toDouble())
+        // mpv 改 speed 只更新 scaletempo2 的节奏，不会清空 AudioTrack 里已缓存的旧倍速音频；
+        // 不清空的话松手后会先把旧 5x 音频播完才回到 1.5x（video-sync=audio 画面也跟着快）。
+        // 重载音频输出丢弃残留旧倍速音频，让新倍速立即生效。
+        reloadAudioOutput()
         binding.tvSpeedHint.text = "${boost}x"
         binding.tvSpeedHint.visibility = android.view.View.VISIBLE
     }
@@ -1457,6 +1453,12 @@ class MpvPlayerActivity : AppCompatActivity() {
         isLongPressBoost = false
         binding.tvSpeedHint.visibility = android.view.View.GONE
         mpv?.setPropertyDouble("speed", normalSpeed.toDouble())
+        reloadAudioOutput()
+    }
+
+    /** 重载音频输出，丢弃已缓存的旧倍速音频，避免倍速切换后残留几秒旧速度 */
+    private fun reloadAudioOutput() {
+        runCatching { mpv?.command(arrayOf("ao-reload")) }
     }
 
     private fun updateSpeedButton() {
@@ -1823,7 +1825,6 @@ class MpvPlayerActivity : AppCompatActivity() {
         const val EXTRA_SHARE = "share"
         const val EXTRA_DIR = "dir"
         const val EXTRA_INDEX = "index"
-        private const val EXTRA_REBUILD_TOAST = "rebuild_toast"
         const val EXTRA_TARGET_NAME = "target_name"
 
         fun intent(

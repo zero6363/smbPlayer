@@ -17,6 +17,15 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.45",
+            date = "2026-11-27",
+            lines = listOf(
+                "修复长按临时倍速（如 5x）松手后仍以 5x 播放几秒才回到常驻倍速的问题：切换倍速时重载音频输出，丢弃已缓存的旧倍速音频，松手立即恢复设定倍速",
+                "旋转不再重载视频：去掉旋转按钮的 Activity 重建，方向切换时 mpv 实例、SMB 连接与播放进度全部保留，只重新挂载画面，旋转瞬间不再重新缓冲/重新定位",
+                "旋转后锁定到所选朝向，不再被传感器自动拉回",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.44",
             date = "2026-11-27",
             lines = listOf(

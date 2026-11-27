@@ -26,8 +26,8 @@ android {
         applicationId = "com.smbplayer.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 54
-        versionName = "1.44"
+        versionCode = 55
+        versionName = "1.45"
 
         // ABI 由 -PmpvAbi 控制，默认 arm64 精简包：
         //   assembleRelease -PmpvAbi=arm64 → 仅 arm64-v8a（约 46MB，真机/发布）
