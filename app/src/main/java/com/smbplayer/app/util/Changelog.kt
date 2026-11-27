@@ -17,6 +17,13 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.46",
+            date = "2026-11-27",
+            lines = listOf(
+                "修复横屏后画面比例不对：旋转/尺寸变化时把新的 SurfaceView 画布尺寸同步给 mpv（android-surface-size），宽高比与黑边按新尺寸重新计算",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.45",
             date = "2026-11-27",
             lines = listOf(

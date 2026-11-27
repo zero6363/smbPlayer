@@ -922,7 +922,13 @@ class MpvPlayerActivity : AppCompatActivity() {
                 }
                 if (videoNames.isNotEmpty() && pendingLoad == null && currentToken == null) loadCurrent()
             }
-            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                // 旋转/尺寸变化时把画布尺寸同步给 mpv：vo 的 android-surface-size 一旦非 0
+                // 就优先于 ANativeWindow 的尺寸，不更新会让旋转后仍按旧尺寸算黑边，画面比例错乱。
+                if (width > 0 && height > 0) {
+                    mpv?.setPropertyString("android-surface-size", "${width}x${height}")
+                }
+            }
             override fun surfaceDestroyed(holder: SurfaceHolder) {
                 surfaceReady = false
                 // 关键：Activity 正在销毁/返回/切后台时不要 detachSurface——libmpv 的 vo 线程仍持有
