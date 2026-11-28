@@ -61,6 +61,12 @@ class SettingsActivity : AppCompatActivity() {
             SettingsRepository.frameSaveToGallery = isChecked
         }
 
+        // 导出帧是否带字幕
+        binding.swFrameSubtitles.isChecked = SettingsRepository.frameScreenshotWithSubtitles
+        binding.swFrameSubtitles.setOnCheckedChangeListener { _, isChecked ->
+            SettingsRepository.frameScreenshotWithSubtitles = isChecked
+        }
+
         // 分区滑动调音量/亮度
         binding.swZoneVolumeBrightness.isChecked = SettingsRepository.zoneVolumeBrightness
         binding.swZoneVolumeBrightness.setOnCheckedChangeListener { _, isChecked ->

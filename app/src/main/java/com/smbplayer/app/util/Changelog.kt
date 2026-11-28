@@ -17,6 +17,15 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.47",
+            date = "2026-11-28",
+            lines = listOf(
+                "设置页（首页右上角菜单 → 设置）新增「截图带字幕」开关，默认开启；关闭后「导出当前帧」得到不带字幕的原始视频画面",
+                "修复竖屏播放页「播放设置 → 字幕」分组没有显示「截图带字幕」开关的问题；横屏、竖屏播放设置现在都能直接切换",
+                "该开关为全局设置，首页设置与播放设置面板共用同一状态；调整后立即对下一次导出帧生效",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.46",
             date = "2026-11-27",
             lines = listOf(

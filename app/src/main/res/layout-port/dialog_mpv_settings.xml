@@ -411,6 +411,29 @@
                             android:textColor="@color/player_control_text_secondary"
                             android:textSize="16sp" />
                     </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/settings_frame_screenshot_subtitles"
+                            android:textColor="@color/player_control_text"
+                            android:textSize="13sp" />
+
+                        <Switch
+                            android:id="@+id/switch_frame_subtitles"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:showText="false"
+                            android:thumbTint="@color/player_accent"
+                            android:trackTint="#55FFFFFF" />
+                    </LinearLayout>
                 </LinearLayout>
 
                 <View

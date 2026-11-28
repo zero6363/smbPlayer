@@ -219,7 +219,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="截图带字幕"
+                            android:text="@string/settings_frame_screenshot_subtitles"
                             android:textColor="@color/player_control_text"
                             android:textSize="13sp" />
 
